@@ -214,6 +214,48 @@
     color: var(--accent);
   }
 
+  /* Tooltips — hover on desktop, tap on mobile */
+  .has-hint {
+    position: relative;
+  }
+  .has-hint .hint {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a30;
+    border: 1px solid #4a4a6a;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 8px 12px;
+    border-radius: 8px;
+    white-space: normal;
+    width: max-content;
+    max-width: 260px;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    text-align: left;
+  }
+  .has-hint .hint::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #4a4a6a;
+  }
+  /* Desktop hover */
+  @media (hover: hover) {
+    .has-hint:hover .hint { display: block; }
+  }
+  /* Mobile: tap toggles via JS class */
+  .has-hint.hint-visible .hint { display: block; }
+
   /* =========== CHARTS =========== */
   .chart-card { margin-bottom: 16px; }
   .chart-container { position: relative; height: 220px; }
@@ -322,11 +364,12 @@
     </div>
 
     <!-- Inverter node -->
-    <div class="flow-node node-inverter">
+    <div class="flow-node node-inverter has-hint">
       <div class="inverter-box">
         <span>Inverter</span>
         <span class="inv-mode" id="flow-inv-mode">--</span>
       </div>
+      <span class="hint" id="inverter-hint">--</span>
     </div>
 
     <!-- Battery node -->
@@ -436,15 +479,33 @@
     </div>
     <div class="control-row">
       <span class="control-label">Output</span>
-      <button class="btn" id="btn-uti" onclick="setOutputMode('uti')" disabled>UTI</button>
-      <button class="btn" id="btn-sbu" onclick="setOutputMode('sbu')" disabled>SBU</button>
-      <button class="btn" id="btn-sub" onclick="setOutputMode('sub')" disabled>SUB</button>
-      <button class="btn" id="btn-sol" onclick="setOutputMode('sol')" disabled>SOL</button>
+      <span class="has-hint">
+        <button class="btn" id="btn-uti" onclick="setOutputMode('uti')" disabled>UTI</button>
+        <span class="hint"><b>UTI — Grid First</b><br>Grid powers loads. Battery is protected from discharge. Solar still charges the battery.</span>
+      </span>
+      <span class="has-hint">
+        <button class="btn" id="btn-sbu" onclick="setOutputMode('sbu')" disabled>SBU</button>
+        <span class="hint"><b>SBU — Solar/Battery/Utility</b><br>Solar and battery power loads first. Grid is used only when battery is depleted.</span>
+      </span>
+      <span class="has-hint">
+        <button class="btn" id="btn-sub" onclick="setOutputMode('sub')" disabled>SUB</button>
+        <span class="hint"><b>SUB — Solar/Utility/Battery</b><br>Solar and grid power loads first. Battery is used only when both are insufficient.</span>
+      </span>
+      <span class="has-hint">
+        <button class="btn" id="btn-sol" onclick="setOutputMode('sol')" disabled>SOL</button>
+        <span class="hint"><b>SOL — Solar Only</b><br>Only solar powers loads. No grid or battery usage. Output is off when solar is insufficient.</span>
+      </span>
     </div>
     <div class="control-row">
       <span class="control-label">Charge</span>
-      <button class="btn" id="btn-snu" onclick="setChargeMode('snu')" disabled>SNU (PV+Grid)</button>
-      <button class="btn" id="btn-oso" onclick="setChargeMode('oso')" disabled>OSO (PV Only)</button>
+      <span class="has-hint">
+        <button class="btn" id="btn-snu" onclick="setChargeMode('snu')" disabled>SNU</button>
+        <span class="hint"><b>SNU — Solar &amp; Grid Charging</b><br>Battery charges from both solar panels and the grid. Fastest charging, uses grid power.</span>
+      </span>
+      <span class="has-hint">
+        <button class="btn" id="btn-oso" onclick="setChargeMode('oso')" disabled>OSO</button>
+        <span class="hint"><b>OSO — Solar Only Charging</b><br>Battery charges from solar panels only. No grid power used for charging. Maximizes solar self-consumption.</span>
+      </span>
     </div>
   </div>
 
@@ -535,8 +596,9 @@ function updateDashboard(d) {
   // Inverter mode — show both output and charge mode
   document.getElementById('flow-inv-mode').textContent = `${outMode} / ${chargeMode}`;
 
-  // -- Animate flow lines --
+  // -- Animate flow lines + inverter hint --
   updateFlowAnimations(d);
+  updateInverterHint(d);
 
   // -- Header mode pill --
   const pill = document.getElementById('header-mode');
@@ -642,6 +704,44 @@ function updateControlButtons(d) {
 async function setControlMode(mode) { await fetch(`/api/mode/${mode}`, { method: 'POST' }); }
 async function setOutputMode(mode) { await fetch(`/api/mode/output/${mode}`, { method: 'POST' }); }
 async function setChargeMode(mode) { await fetch(`/api/mode/charge/${mode}`, { method: 'POST' }); }
+
+// ============================================================
+// Inverter hint (updates based on current mode)
+// ============================================================
+const modeHints = {
+  UTI: 'Grid First — Grid powers loads, battery protected from discharge',
+  SBU: 'Solar/Battery/Utility — Solar & battery first, grid as backup',
+  SUB: 'Solar/Utility/Battery — Solar & grid first, battery as backup',
+  SOL: 'Solar Only — Only solar powers loads, no grid or battery',
+};
+const chargeHints = {
+  SNU: 'Solar + Grid Charging — Battery charges from PV and grid',
+  OSO: 'Solar Only Charging — Battery charges from PV only',
+};
+
+function updateInverterHint(d) {
+  const om = (d?.output_mode_name || '').toUpperCase();
+  const cm = (d?.charge_mode_name || '').toUpperCase();
+  const hint = document.getElementById('inverter-hint');
+  const outDesc = modeHints[om] || om;
+  const chgDesc = chargeHints[cm] || cm;
+  hint.innerHTML = `<b>Output: ${om}</b><br>${outDesc}<br><br><b>Charge: ${cm}</b><br>${chgDesc}`;
+}
+
+// ============================================================
+// Mobile: tap to show/dismiss hints
+// ============================================================
+document.addEventListener('click', function(e) {
+  const hintEl = e.target.closest('.has-hint');
+  // Close all other open hints
+  document.querySelectorAll('.has-hint.hint-visible').forEach(el => {
+    if (el !== hintEl) el.classList.remove('hint-visible');
+  });
+  // Toggle the tapped one
+  if (hintEl) {
+    hintEl.classList.toggle('hint-visible');
+  }
+});
 
 // ============================================================
 // Charts
