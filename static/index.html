@@ -660,10 +660,11 @@ function updateDashboard(d) {
   socEl.textContent = `${soc} %`;
   socEl.style.color = soc <= 82 ? 'var(--red)' : soc <= 92 ? 'var(--yellow)' : 'var(--green)';
 
-  // Grid node
-  const gridKw = gridPresent ? (gridV * 0.01).toFixed(2) : '0.00'; // approximate
+  // Grid node — estimate current grid power from load + charging - solar
+  const gridPowerW = gridPresent ? Math.max(0, loadPower + (d.total_charge_power ?? 0) - pvTotal) : 0;
+  const gridPowerKw = (gridPowerW / 1000).toFixed(2);
   document.getElementById('flow-grid').innerHTML = gridPresent
-    ? `${(d.grid_consumption_today ?? 0).toFixed(1)} <span class="node-sub">kW</span>`
+    ? `${gridPowerKw} <span class="node-sub">kW</span>`
     : `OFF`;
   document.getElementById('flow-grid').style.color = gridPresent ? 'var(--text)' : 'var(--red)';
   document.getElementById('flow-grid-v').textContent = gridPresent ? `${gridV.toFixed(1)} V` : 'No grid';
@@ -733,9 +734,9 @@ function updateFlowAnimations(d) {
   document.getElementById('path-solar-inv').classList.toggle('active', solarActive);
   setDots('dot-solar-inv', 3, solarActive);
 
-  // Battery flow: positive current = charging (inv→batt), negative = discharging (batt→inv)
-  const charging = battI > 0.5;
-  const discharging = battI < -0.5;
+  // Battery flow: negative current = charging (inv→batt), positive = discharging (batt→inv)
+  const charging = battI < -0.5;
+  const discharging = battI > 0.5;
   document.getElementById('path-inv-batt').classList.toggle('active', charging || discharging);
   setDots('dot-inv-batt', 3, charging);     // Inverter → Battery
   setDots('dot-batt-inv', 3, discharging);   // Battery → Inverter
