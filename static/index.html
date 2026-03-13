@@ -113,7 +113,8 @@
     flex-direction: column; gap: 2px;
   }
   .inverter-box .inv-mode {
-    font-size: 14px; font-weight: 700; color: var(--accent);
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    white-space: nowrap;
   }
 
   /* =========== SVG FLOW LINES =========== */
@@ -207,6 +208,11 @@
   .btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
   .btn.active-orange { background: var(--orange); color: #000; border-color: var(--orange); }
   .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn.current-mode {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 8px rgba(56,189,248,0.15);
+    color: var(--accent);
+  }
 
   /* =========== CHARTS =========== */
   .chart-card { margin-bottom: 16px; }
@@ -526,8 +532,8 @@ function updateDashboard(d) {
   // Load node
   document.getElementById('flow-load').innerHTML = `${loadPower} <span class="node-sub">W</span>`;
 
-  // Inverter mode
-  document.getElementById('flow-inv-mode').textContent = outMode;
+  // Inverter mode — show both output and charge mode
+  document.getElementById('flow-inv-mode').textContent = `${outMode} / ${chargeMode}`;
 
   // -- Animate flow lines --
   updateFlowAnimations(d);
@@ -621,11 +627,15 @@ function updateControlButtons(d) {
 
   const om = (d?.output_mode_name || '').toLowerCase();
   ['uti','sbu','sub','sol'].forEach(m => {
-    document.getElementById('btn-' + m).classList.toggle('active', om === m && isManual);
+    const btn = document.getElementById('btn-' + m);
+    btn.classList.toggle('active', om === m && isManual);
+    btn.classList.toggle('current-mode', om === m && !isManual);
   });
   const cm = (d?.charge_mode_name || '').toLowerCase();
   ['snu','oso'].forEach(m => {
-    document.getElementById('btn-' + m).classList.toggle('active', cm === m && isManual);
+    const btn = document.getElementById('btn-' + m);
+    btn.classList.toggle('active', cm === m && isManual);
+    btn.classList.toggle('current-mode', cm === m && !isManual);
   });
 }
 
