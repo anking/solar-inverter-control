@@ -45,29 +45,71 @@ from database import (
 controller: InverterController = None
 latest_status: dict = {}
 ws_clients: set = set()
+log_clients: set = set()
 manual_mode: bool = False
 control_task: asyncio.Task = None
+log_event_loop: asyncio.AbstractEventLoop = None
 
 
 # =============================================================================
-# LOGGING
+# LOGGING — with WebSocket broadcast to debug panel
 # =============================================================================
+
+class WebSocketLogHandler(logging.Handler):
+    """Logging handler that pushes log lines to connected debug WS clients."""
+
+    def __init__(self):
+        super().__init__()
+        from collections import deque
+        self.buffer = deque(maxlen=500)  # keep last 500 lines for new connections
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.buffer.append(msg)
+        # Schedule async broadcast if we have clients and an event loop
+        if log_clients and log_event_loop and log_event_loop.is_running():
+            log_event_loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                _broadcast_log(msg)
+            )
+
+
+async def _broadcast_log(msg):
+    """Send a log line to all debug panel WS clients."""
+    global log_clients
+    if not log_clients:
+        return
+    disconnected = set()
+    for ws in log_clients:
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            disconnected.add(ws)
+    log_clients -= disconnected
+
+
+ws_log_handler = WebSocketLogHandler()
+
 
 def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(logging.INFO)
-    console.setFormatter(logging.Formatter("%(message)s"))
+    console.setFormatter(fmt)
     logger.addHandler(console)
+
+    ws_log_handler.setLevel(logging.DEBUG)
+    ws_log_handler.setFormatter(fmt)
+    logger.addHandler(ws_log_handler)
 
     try:
         file_handler = logging.FileHandler(LOG_FILE)
         file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        )
+        file_handler.setFormatter(fmt)
         logger.addHandler(file_handler)
     except (PermissionError, FileNotFoundError):
         logging.warning(f"Cannot write to {LOG_FILE}, logging to console only")
@@ -216,6 +258,7 @@ async def control_loop():
 
 async def broadcast_status(status):
     """Send status to all connected WebSocket clients."""
+    global ws_clients
     if not ws_clients:
         return
     data = json.dumps(status)
@@ -234,9 +277,10 @@ async def broadcast_status(status):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global controller, control_task
+    global controller, control_task, log_event_loop
 
     setup_logging()
+    log_event_loop = asyncio.get_running_loop()
     init_db()
 
     controller = InverterController(SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS)
@@ -278,7 +322,9 @@ async def dashboard():
 
 @app.get("/api/status")
 async def api_status():
-    return JSONResponse(latest_status or {"error": "no data yet"})
+    status = dict(latest_status) if latest_status else {}
+    status["manual_mode"] = manual_mode
+    return JSONResponse(status if status else {"error": "no data yet", "manual_mode": manual_mode})
 
 
 @app.get("/api/history")
@@ -307,11 +353,19 @@ async def api_config():
 
 # --- Manual Control ---
 
+async def _broadcast_manual_update():
+    """Push updated manual_mode to all WS clients immediately."""
+    if latest_status:
+        latest_status["manual_mode"] = manual_mode
+        await broadcast_status(latest_status)
+
+
 @app.post("/api/mode/auto")
 async def set_auto_mode():
     global manual_mode
     manual_mode = False
     logging.info("Switched to AUTO mode")
+    await _broadcast_manual_update()
     return JSONResponse({"manual_mode": False})
 
 
@@ -320,6 +374,7 @@ async def set_manual_mode():
     global manual_mode
     manual_mode = True
     logging.info("Switched to MANUAL mode")
+    await _broadcast_manual_update()
     return JSONResponse({"manual_mode": True})
 
 
@@ -333,6 +388,10 @@ async def set_output_mode(mode: str):
         return JSONResponse({"error": "Switch to manual mode first"}, status_code=400)
 
     success = await asyncio.to_thread(controller.set_output_mode, mode_val)
+    if success and latest_status:
+        latest_status["output_mode"] = mode_val
+        latest_status["output_mode_name"] = MODE_NAMES.get(mode_val, str(mode_val))
+        await broadcast_status(latest_status)
     return JSONResponse({"success": success, "mode": mode.upper()})
 
 
@@ -346,6 +405,10 @@ async def set_charge_mode(mode: str):
         return JSONResponse({"error": "Switch to manual mode first"}, status_code=400)
 
     success = await asyncio.to_thread(controller.set_charge_mode, mode_val)
+    if success and latest_status:
+        latest_status["charge_mode"] = mode_val
+        latest_status["charge_mode_name"] = CHARGE_NAMES.get(mode_val, str(mode_val))
+        await broadcast_status(latest_status)
     return JSONResponse({"success": success, "mode": mode.upper()})
 
 
@@ -366,6 +429,24 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     finally:
         ws_clients.discard(ws)
+
+
+@app.websocket("/ws/logs")
+async def websocket_logs(ws: WebSocket):
+    """Debug log stream — only active while panel is open."""
+    await ws.accept()
+    log_clients.add(ws)
+    try:
+        # Send buffered recent logs so the panel has context
+        for line in ws_log_handler.buffer:
+            await ws.send_text(line)
+        # Keep alive
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        log_clients.discard(ws)
 
 
 # =============================================================================
