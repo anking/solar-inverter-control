@@ -7,11 +7,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root {
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --surface2: #334155;
-    --text: #f1f5f9;
-    --text-dim: #94a3b8;
+    --bg: #1a1a2e;
+    --surface: #232340;
+    --surface2: #2d2d4a;
+    --text: #e8e8f0;
+    --text-dim: #8888a8;
     --accent: #38bdf8;
     --green: #22c55e;
     --red: #ef4444;
@@ -19,6 +19,7 @@
     --yellow: #eab308;
     --blue: #3b82f6;
     --purple: #a855f7;
+    --flow-color: #4ca6ff;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -28,7 +29,7 @@
     min-height: 100vh;
   }
 
-  /* Header */
+  /* =========== HEADER =========== */
   .header {
     background: var(--surface);
     padding: 12px 20px;
@@ -38,397 +39,410 @@
     border-bottom: 1px solid var(--surface2);
   }
   .header h1 { font-size: 18px; font-weight: 600; }
-  .header .status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-dim);
+  .header-right {
+    display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-dim);
   }
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--red);
-  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
   .status-dot.connected { background: var(--green); }
+  .mode-pill {
+    padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .mode-pill-sbu { background: rgba(34,197,94,0.2); color: var(--green); }
+  .mode-pill-uti { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .mode-pill-sub { background: rgba(168,85,247,0.2); color: var(--purple); }
+  .mode-pill-sol { background: rgba(234,179,8,0.2); color: var(--yellow); }
 
-  /* Manual override banner */
   .manual-banner {
-    background: var(--orange);
-    color: #000;
-    text-align: center;
-    padding: 6px;
-    font-weight: 600;
-    font-size: 13px;
-    display: none;
+    background: var(--orange); color: #000; text-align: center;
+    padding: 6px; font-weight: 600; font-size: 13px; display: none;
   }
   .manual-banner.active { display: block; }
 
-  /* Grid layout */
-  .dashboard {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 16px;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 16px;
+  /* =========== MAIN LAYOUT =========== */
+  .page { max-width: 900px; margin: 0 auto; padding: 16px; }
+
+  /* =========== ENERGY FLOW DIAGRAM =========== */
+  .flow-diagram {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 5 / 4;
+    max-height: 420px;
+    margin: 0 auto 16px;
   }
 
-  /* Cards */
+  /* Nodes */
+  .flow-node {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    z-index: 2;
+  }
+  .flow-node .icon {
+    width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+    margin-bottom: 6px;
+  }
+  .flow-node .node-label {
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .flow-node .node-value {
+    font-size: 22px; font-weight: 700; line-height: 1.2;
+  }
+  .flow-node .node-sub {
+    font-size: 12px; color: var(--text-dim);
+  }
+
+  /* Node positions */
+  .node-solar   { top: 0; left: 50%; transform: translateX(-50%); }
+  .node-inverter{ top: 38%; left: 50%; transform: translate(-50%, -50%); }
+  .node-battery { bottom: 0; left: 8%; }
+  .node-grid    { bottom: 0; left: 50%; transform: translateX(-50%); }
+  .node-load    { bottom: 0; right: 8%; text-align: center; }
+
+  /* Inverter box */
+  .inverter-box {
+    width: 72px; height: 72px;
+    background: linear-gradient(135deg, #3a3a5c 0%, #2a2a48 100%);
+    border: 2px solid #4a4a6a;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    flex-direction: column; gap: 2px;
+  }
+  .inverter-box .inv-mode {
+    font-size: 14px; font-weight: 700; color: var(--accent);
+  }
+
+  /* =========== SVG FLOW LINES =========== */
+  .flow-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .flow-line {
+    fill: none;
+    stroke: #3a3a5c;
+    stroke-width: 2;
+    stroke-dasharray: 8 6;
+  }
+  .flow-line.active {
+    stroke: var(--flow-color);
+  }
+
+  /* Animated dots along paths */
+  .flow-dot {
+    fill: var(--flow-color);
+    opacity: 0;
+  }
+  .flow-dot.active {
+    opacity: 1;
+  }
+
+  /* =========== DAILY STATS CARDS =========== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--surface2);
+  }
+  .stat-value {
+    font-size: 24px; font-weight: 700;
+  }
+  .stat-unit { font-size: 14px; color: var(--text-dim); }
+  .stat-label { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .stat-icon { float: right; font-size: 28px; opacity: 0.5; margin-top: -4px; }
+
+  /* =========== DETAIL CARDS =========== */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
   .card {
     background: var(--surface);
     border-radius: 12px;
-    padding: 20px;
+    padding: 16px;
     border: 1px solid var(--surface2);
   }
   .card-title {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-dim);
-    margin-bottom: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-dim); margin-bottom: 8px;
   }
-
-  /* SOC card - big prominent display */
-  .soc-card {
-    grid-column: span 1;
-    text-align: center;
-  }
-  .soc-value {
-    font-size: 72px;
-    font-weight: 700;
-    line-height: 1;
-    margin: 8px 0;
-  }
-  .soc-bar-bg {
-    width: 100%;
-    height: 12px;
-    background: var(--surface2);
-    border-radius: 6px;
-    overflow: hidden;
-    margin-top: 12px;
-  }
-  .soc-bar {
-    height: 100%;
-    border-radius: 6px;
-    transition: width 0.5s ease, background 0.5s ease;
-  }
-  .soc-thresholds {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 4px;
-  }
-
-  /* Value display */
   .metric {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--surface2);
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 5px 0; border-bottom: 1px solid var(--surface2);
   }
   .metric:last-child { border-bottom: none; }
-  .metric-label { font-size: 14px; color: var(--text-dim); }
-  .metric-value { font-size: 20px; font-weight: 600; }
-  .metric-unit { font-size: 13px; color: var(--text-dim); margin-left: 2px; }
+  .metric-label { font-size: 13px; color: var(--text-dim); }
+  .metric-value { font-size: 17px; font-weight: 600; }
+  .metric-unit { font-size: 12px; color: var(--text-dim); margin-left: 2px; }
 
-  /* Mode badges */
-  .mode-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 14px;
-  }
-  .mode-sbu { background: rgba(34,197,94,0.2); color: var(--green); }
-  .mode-uti { background: rgba(59,130,246,0.2); color: var(--blue); }
-  .mode-sub { background: rgba(168,85,247,0.2); color: var(--purple); }
-  .mode-sol { background: rgba(234,179,8,0.2); color: var(--yellow); }
-
-  /* Grid status */
-  .grid-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 20px;
-    font-weight: 600;
-  }
-  .grid-dot {
-    width: 14px; height: 14px; border-radius: 50%;
-  }
-  .grid-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
-  .grid-off { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
-  /* Control panel */
-  .control-card { grid-column: 1 / -1; }
+  /* =========== CONTROLS =========== */
+  .controls-card { margin-bottom: 16px; }
   .control-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px; flex-wrap: wrap;
   }
   .control-label {
-    font-size: 13px;
-    color: var(--text-dim);
-    min-width: 100px;
+    font-size: 12px; color: var(--text-dim); min-width: 90px;
   }
   .btn {
-    padding: 8px 16px;
-    border: 1px solid var(--surface2);
-    border-radius: 8px;
-    background: var(--surface2);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
+    padding: 7px 14px; border: 1px solid var(--surface2); border-radius: 8px;
+    background: var(--surface2); color: var(--text);
+    font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
   }
-  .btn:hover { background: #475569; }
-  .btn.active {
-    background: var(--accent);
-    color: #000;
-    border-color: var(--accent);
-  }
-  .btn.active-orange {
-    background: var(--orange);
-    color: #000;
-    border-color: var(--orange);
-  }
-  .btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
+  .btn:hover { background: #3d3d5c; }
+  .btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .btn.active-orange { background: var(--orange); color: #000; border-color: var(--orange); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-  /* Charts */
-  .chart-card {
-    grid-column: 1 / -1;
-  }
-  .chart-container {
-    position: relative;
-    height: 250px;
-  }
-  .chart-tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
+  /* =========== CHARTS =========== */
+  .chart-card { margin-bottom: 16px; }
+  .chart-container { position: relative; height: 220px; }
+  .chart-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
   .chart-tab {
-    padding: 4px 12px;
-    border-radius: 6px;
-    background: var(--surface2);
-    color: var(--text-dim);
-    font-size: 12px;
-    cursor: pointer;
-    border: none;
+    padding: 3px 10px; border-radius: 6px; background: var(--surface2);
+    color: var(--text-dim); font-size: 11px; cursor: pointer; border: none;
   }
   .chart-tab.active { background: var(--accent); color: #000; }
 
-  /* Daily stats table */
-  .stats-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .stats-table th {
-    text-align: left;
-    padding: 8px;
-    border-bottom: 1px solid var(--surface2);
-    color: var(--text-dim);
-    font-weight: 500;
-  }
-  .stats-table td {
-    padding: 8px;
-    border-bottom: 1px solid var(--surface2);
+  /* =========== FOOTER =========== */
+  .footer {
+    text-align: center; padding: 12px; font-size: 11px; color: var(--text-dim);
   }
 
-  /* Today stats */
-  .today-stats {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .today-stat {
-    flex: 1;
-    min-width: 120px;
-    text-align: center;
-  }
-  .today-stat-value {
-    font-size: 28px;
-    font-weight: 700;
-  }
-  .today-stat-label {
-    font-size: 12px;
-    color: var(--text-dim);
-    margin-top: 4px;
-  }
-
-  /* Responsive */
+  /* =========== RESPONSIVE =========== */
   @media (max-width: 600px) {
-    .dashboard { padding: 8px; gap: 8px; }
-    .soc-value { font-size: 56px; }
-    .card { padding: 14px; }
-    .metric-value { font-size: 16px; }
-    .header h1 { font-size: 15px; }
+    .page { padding: 8px; }
+    .flow-diagram { aspect-ratio: 4 / 4; }
+    .flow-node .icon { width: 48px; height: 48px; font-size: 28px; }
+    .flow-node .node-value { font-size: 16px; }
+    .inverter-box { width: 56px; height: 56px; font-size: 10px; }
+    .inverter-box .inv-mode { font-size: 12px; }
+    .node-battery { left: 4%; }
+    .node-load { right: 4%; }
+    .stat-value { font-size: 20px; }
+    .stat-card { padding: 12px; }
   }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>Solar Inverter Dashboard</h1>
-  <div class="status">
+  <h1>Solar Inverter</h1>
+  <div class="header-right">
+    <span class="mode-pill" id="header-mode">--</span>
     <span id="clock"></span>
     <div class="status-dot" id="ws-status"></div>
     <span id="ws-label">Connecting...</span>
   </div>
 </div>
 
-<div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE — Automatic SOC control is paused</div>
+<div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE</div>
 
-<div class="dashboard">
+<div class="page">
 
-  <!-- SOC -->
-  <div class="card soc-card">
-    <div class="card-title">Battery State of Charge</div>
-    <div class="soc-value" id="soc">--<span class="metric-unit">%</span></div>
-    <div class="soc-bar-bg">
-      <div class="soc-bar" id="soc-bar" style="width:0%"></div>
-    </div>
-    <div class="soc-thresholds">
-      <span>0%</span>
-      <span>UTI &le;82%</span>
-      <span>SBU &ge;92%</span>
-      <span>100%</span>
-    </div>
-  </div>
+  <!-- =============== ENERGY FLOW DIAGRAM =============== -->
+  <div class="flow-diagram" id="flow-diagram">
+    <svg class="flow-svg" id="flow-svg" viewBox="0 0 500 400" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <!-- Arrow marker -->
+        <marker id="arrowHead" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto">
+          <polygon points="0 0, 6 2, 0 4" fill="var(--flow-color)" />
+        </marker>
+      </defs>
 
-  <!-- Battery -->
-  <div class="card">
-    <div class="card-title">Battery</div>
-    <div class="metric">
-      <span class="metric-label">Voltage</span>
-      <span><span class="metric-value" id="batt-v">--</span><span class="metric-unit">V</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Current</span>
-      <span><span class="metric-value" id="batt-i">--</span><span class="metric-unit">A</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Charge Power</span>
-      <span><span class="metric-value" id="charge-power">--</span><span class="metric-unit">W</span></span>
-    </div>
-  </div>
+      <!-- Solar → Inverter -->
+      <path id="path-solar-inv" class="flow-line" d="M250,75 L250,140" />
 
-  <!-- Solar PV -->
-  <div class="card">
-    <div class="card-title">Solar PV</div>
-    <div class="metric">
-      <span class="metric-label">PV1 Power</span>
-      <span><span class="metric-value" id="pv1">--</span><span class="metric-unit">W</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">PV2 Power</span>
-      <span><span class="metric-value" id="pv2">--</span><span class="metric-unit">W</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Total PV</span>
-      <span><span class="metric-value" id="pv-total" style="color:var(--yellow)">--</span><span class="metric-unit">W</span></span>
-    </div>
-  </div>
+      <!-- Inverter → Battery -->
+      <path id="path-inv-batt" class="flow-line" d="M215,175 C160,185 105,230 80,300" />
 
-  <!-- Load -->
-  <div class="card">
-    <div class="card-title">Load</div>
-    <div class="metric">
-      <span class="metric-label">Active Power</span>
-      <span><span class="metric-value" id="load-power">--</span><span class="metric-unit">W</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Current</span>
-      <span><span class="metric-value" id="load-current">--</span><span class="metric-unit">A</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Output Voltage</span>
-      <span><span class="metric-value" id="output-v">--</span><span class="metric-unit">V</span></span>
-    </div>
-  </div>
+      <!-- Inverter → Grid -->
+      <path id="path-inv-grid" class="flow-line" d="M250,210 L250,300" />
 
-  <!-- Grid + Mode -->
-  <div class="card">
-    <div class="card-title">Grid &amp; Mode</div>
-    <div class="metric">
-      <span class="metric-label">Grid</span>
-      <span class="grid-status">
-        <span class="grid-dot" id="grid-dot"></span>
-        <span id="grid-text">--</span>
-      </span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Grid Voltage</span>
-      <span><span class="metric-value" id="grid-v">--</span><span class="metric-unit">V</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Grid Frequency</span>
-      <span><span class="metric-value" id="grid-freq">--</span><span class="metric-unit">Hz</span></span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Output Mode</span>
-      <span class="mode-badge" id="output-mode">--</span>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Charge Mode</span>
-      <span class="mode-badge" id="charge-mode">--</span>
-    </div>
-  </div>
+      <!-- Inverter → Load -->
+      <path id="path-inv-load" class="flow-line" d="M285,175 C340,185 395,230 420,300" />
 
-  <!-- Today's Stats -->
-  <div class="card">
-    <div class="card-title">Today's Energy</div>
-    <div class="today-stats">
-      <div class="today-stat">
-        <div class="today-stat-value" id="pv-today" style="color:var(--yellow)">--</div>
-        <div class="today-stat-label">PV Generation (kWh)</div>
-      </div>
-      <div class="today-stat">
-        <div class="today-stat-value" id="load-today" style="color:var(--orange)">--</div>
-        <div class="today-stat-label">Load Usage (kWh)</div>
-      </div>
-      <div class="today-stat">
-        <div class="today-stat-value" id="grid-today" style="color:var(--blue)">--</div>
-        <div class="today-stat-label">Grid Usage (kWh)</div>
+      <!-- Animated dots - 3 per path for smooth flow -->
+      <!-- Solar → Inverter -->
+      <circle class="flow-dot" id="dot-solar-inv-0" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0s"><mpath href="#path-solar-inv"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-solar-inv-1" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0.5s"><mpath href="#path-solar-inv"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-solar-inv-2" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="1.0s"><mpath href="#path-solar-inv"/></animateMotion></circle>
+
+      <!-- Inverter → Battery (or Battery → Inverter, reversed) -->
+      <circle class="flow-dot" id="dot-inv-batt-0" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0s"><mpath href="#path-inv-batt"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-batt-1" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0.66s"><mpath href="#path-inv-batt"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-batt-2" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="1.33s"><mpath href="#path-inv-batt"/></animateMotion></circle>
+
+      <!-- Reverse: Battery → Inverter -->
+      <circle class="flow-dot" id="dot-batt-inv-0" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-batt"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-batt-inv-1" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0.66s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-batt"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-batt-inv-2" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="1.33s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-batt"/></animateMotion></circle>
+
+      <!-- Inverter → Grid (export) or Grid → Inverter (import) -->
+      <circle class="flow-dot" id="dot-inv-grid-0" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0s"><mpath href="#path-inv-grid"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-grid-1" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0.5s"><mpath href="#path-inv-grid"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-grid-2" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="1.0s"><mpath href="#path-inv-grid"/></animateMotion></circle>
+
+      <!-- Reverse: Grid → Inverter -->
+      <circle class="flow-dot" id="dot-grid-inv-0" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-grid"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-grid-inv-1" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0.5s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-grid"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-grid-inv-2" r="4"><animateMotion dur="1.5s" repeatCount="indefinite" begin="1.0s" keyPoints="1;0" keyTimes="0;1"><mpath href="#path-inv-grid"/></animateMotion></circle>
+
+      <!-- Inverter → Load -->
+      <circle class="flow-dot" id="dot-inv-load-0" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0s"><mpath href="#path-inv-load"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-load-1" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="0.66s"><mpath href="#path-inv-load"/></animateMotion></circle>
+      <circle class="flow-dot" id="dot-inv-load-2" r="4"><animateMotion dur="2s" repeatCount="indefinite" begin="1.33s"><mpath href="#path-inv-load"/></animateMotion></circle>
+    </svg>
+
+    <!-- Solar node -->
+    <div class="flow-node node-solar">
+      <div class="icon">&#9788;</div>
+      <div class="node-label">Solar</div>
+      <div class="node-value" id="flow-pv" style="color:var(--yellow)">-- <span class="node-sub">W</span></div>
+    </div>
+
+    <!-- Inverter node -->
+    <div class="flow-node node-inverter">
+      <div class="inverter-box">
+        <span>Inverter</span>
+        <span class="inv-mode" id="flow-inv-mode">--</span>
       </div>
     </div>
+
+    <!-- Battery node -->
+    <div class="flow-node node-battery">
+      <div class="icon">&#128267;</div>
+      <div class="node-label">Battery</div>
+      <div class="node-value" id="flow-batt">-- <span class="node-sub">kW</span></div>
+      <div class="node-sub" id="flow-soc">-- %</div>
+    </div>
+
+    <!-- Grid node -->
+    <div class="flow-node node-grid">
+      <div class="icon">&#9889;</div>
+      <div class="node-label">Grid</div>
+      <div class="node-value" id="flow-grid">-- <span class="node-sub">kW</span></div>
+      <div class="node-sub" id="flow-grid-v">-- V</div>
+    </div>
+
+    <!-- Load / Consumption node -->
+    <div class="flow-node node-load">
+      <div class="icon">&#127968;</div>
+      <div class="node-label">Consumption</div>
+      <div class="node-value" id="flow-load">-- <span class="node-sub">W</span></div>
+    </div>
   </div>
 
-  <!-- Controls -->
-  <div class="card control-card">
+  <!-- =============== DAILY STATS =============== -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-icon">&#9788;</span>
+      <div class="stat-value" style="color:var(--yellow)"><span id="pv-today">0</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-label">Daily Production</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#127968;</span>
+      <div class="stat-value" style="color:var(--orange)"><span id="load-today">0</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-label">Daily Consumption</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#9889;</span>
+      <div class="stat-value" style="color:var(--blue)"><span id="grid-today">0</span> <span class="stat-unit">kWh</span></div>
+      <div class="stat-label">Daily Grid Purchase</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#128267;</span>
+      <div class="stat-value" style="color:var(--green)"><span id="charge-today">0</span> <span class="stat-unit">W</span></div>
+      <div class="stat-label">Charging Power</div>
+    </div>
+  </div>
+
+  <!-- =============== DETAIL CARDS =============== -->
+  <div class="detail-grid">
+    <div class="card">
+      <div class="card-title">Battery</div>
+      <div class="metric">
+        <span class="metric-label">SOC</span>
+        <span><span class="metric-value" id="det-soc">--</span><span class="metric-unit">%</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Voltage</span>
+        <span><span class="metric-value" id="det-batt-v">--</span><span class="metric-unit">V</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Current</span>
+        <span><span class="metric-value" id="det-batt-i">--</span><span class="metric-unit">A</span></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Solar PV</div>
+      <div class="metric">
+        <span class="metric-label">PV1</span>
+        <span><span class="metric-value" id="det-pv1">--</span><span class="metric-unit">W</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">PV2</span>
+        <span><span class="metric-value" id="det-pv2">--</span><span class="metric-unit">W</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Total</span>
+        <span><span class="metric-value" id="det-pv-total" style="color:var(--yellow)">--</span><span class="metric-unit">W</span></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Grid &amp; Output</div>
+      <div class="metric">
+        <span class="metric-label">Grid</span>
+        <span><span class="metric-value" id="det-grid-v">--</span><span class="metric-unit">V</span> <span class="metric-value" id="det-grid-hz" style="font-size:13px">--</span><span class="metric-unit">Hz</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Output</span>
+        <span><span class="metric-value" id="det-out-v">--</span><span class="metric-unit">V</span></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Load</span>
+        <span><span class="metric-value" id="det-load-i">--</span><span class="metric-unit">A</span> / <span class="metric-value" id="det-load-w">--</span><span class="metric-unit">W</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============== CONTROLS =============== -->
+  <div class="card controls-card">
     <div class="card-title">Manual Controls</div>
     <div class="control-row">
-      <span class="control-label">Control Mode</span>
+      <span class="control-label">Control</span>
       <button class="btn active" id="btn-auto" onclick="setControlMode('auto')">AUTO</button>
       <button class="btn" id="btn-manual" onclick="setControlMode('manual')">MANUAL</button>
     </div>
     <div class="control-row">
-      <span class="control-label">Output Mode</span>
+      <span class="control-label">Output</span>
       <button class="btn" id="btn-uti" onclick="setOutputMode('uti')" disabled>UTI</button>
       <button class="btn" id="btn-sbu" onclick="setOutputMode('sbu')" disabled>SBU</button>
       <button class="btn" id="btn-sub" onclick="setOutputMode('sub')" disabled>SUB</button>
       <button class="btn" id="btn-sol" onclick="setOutputMode('sol')" disabled>SOL</button>
     </div>
     <div class="control-row">
-      <span class="control-label">Charge Mode</span>
+      <span class="control-label">Charge</span>
       <button class="btn" id="btn-snu" onclick="setChargeMode('snu')" disabled>SNU (PV+Grid)</button>
       <button class="btn" id="btn-oso" onclick="setChargeMode('oso')" disabled>OSO (PV Only)</button>
     </div>
   </div>
 
-  <!-- SOC History Chart -->
+  <!-- =============== CHARTS =============== -->
   <div class="card chart-card">
     <div class="card-title">History</div>
     <div class="chart-tabs">
@@ -438,261 +452,249 @@
       <button class="chart-tab" onclick="loadHistory(72, this)">3d</button>
       <button class="chart-tab" onclick="loadHistory(168, this)">7d</button>
     </div>
-    <div class="chart-container">
-      <canvas id="historyChart"></canvas>
-    </div>
+    <div class="chart-container"><canvas id="historyChart"></canvas></div>
   </div>
 
-  <!-- Daily Stats Chart -->
   <div class="card chart-card">
     <div class="card-title">Daily Energy (kWh)</div>
-    <div class="chart-container">
-      <canvas id="dailyChart"></canvas>
-    </div>
+    <div class="chart-container"><canvas id="dailyChart"></canvas></div>
   </div>
 
+  <div class="footer" id="footer">Updated: --</div>
 </div>
 
 <script>
 // ============================================================
-// WebSocket connection
+// WebSocket
 // ============================================================
-let ws;
-let reconnectTimer;
-let isManual = false;
+let ws, reconnectTimer, isManual = false, lastData = null;
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws`);
-
   ws.onopen = () => {
     document.getElementById('ws-status').classList.add('connected');
-    document.getElementById('ws-label').textContent = 'Connected';
+    document.getElementById('ws-label').textContent = 'Live';
   };
-
   ws.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    updateDashboard(data);
+    lastData = JSON.parse(e.data);
+    updateDashboard(lastData);
   };
-
   ws.onclose = () => {
     document.getElementById('ws-status').classList.remove('connected');
     document.getElementById('ws-label').textContent = 'Reconnecting...';
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connectWS, 3000);
   };
-
   ws.onerror = () => ws.close();
 }
 
 // ============================================================
-// Dashboard update
+// Update all dashboard elements
 // ============================================================
 function updateDashboard(d) {
-  // SOC
+  // -- Flow diagram values --
+  const pvTotal = d.pv_total_power ?? 0;
+  const loadPower = d.load_power ?? 0;
   const soc = d.soc ?? 0;
-  document.getElementById('soc').innerHTML = `${soc}<span class="metric-unit">%</span>`;
-  const bar = document.getElementById('soc-bar');
-  bar.style.width = soc + '%';
-  if (soc <= 82) bar.style.background = 'var(--red)';
-  else if (soc <= 92) bar.style.background = 'var(--yellow)';
-  else bar.style.background = 'var(--green)';
+  const battV = d.battery_voltage;
+  const battI = d.battery_current ?? 0;
+  const battPowerW = battV ? Math.abs(battI * battV) : 0;
+  const gridV = d.grid_voltage ?? 0;
+  const gridPresent = d.grid_present;
+  const outMode = d.output_mode_name || '--';
+  const chargeMode = d.charge_mode_name || '--';
 
-  // Battery
-  document.getElementById('batt-v').textContent = d.battery_voltage?.toFixed(1) ?? '--';
-  document.getElementById('batt-i').textContent = d.battery_current?.toFixed(1) ?? '--';
-  document.getElementById('charge-power').textContent = d.total_charge_power ?? '--';
+  // Solar node
+  document.getElementById('flow-pv').innerHTML = `${pvTotal} <span class="node-sub">W</span>`;
 
-  // PV
-  document.getElementById('pv1').textContent = d.pv1_power ?? '--';
-  document.getElementById('pv2').textContent = d.pv2_power ?? '--';
-  document.getElementById('pv-total').textContent = d.pv_total_power ?? '--';
+  // Battery node
+  const battKw = (battPowerW / 1000).toFixed(2);
+  document.getElementById('flow-batt').innerHTML = `${battKw} <span class="node-sub">kW</span>`;
+  const socEl = document.getElementById('flow-soc');
+  socEl.textContent = `${soc} %`;
+  socEl.style.color = soc <= 82 ? 'var(--red)' : soc <= 92 ? 'var(--yellow)' : 'var(--green)';
 
-  // Load
-  document.getElementById('load-power').textContent = d.load_power ?? '--';
-  document.getElementById('load-current').textContent = d.load_current?.toFixed(1) ?? '--';
-  document.getElementById('output-v').textContent = d.output_voltage?.toFixed(1) ?? '--';
+  // Grid node
+  const gridKw = gridPresent ? (gridV * 0.01).toFixed(2) : '0.00'; // approximate
+  document.getElementById('flow-grid').innerHTML = gridPresent
+    ? `${(d.grid_consumption_today ?? 0).toFixed(1)} <span class="node-sub">kW</span>`
+    : `OFF`;
+  document.getElementById('flow-grid').style.color = gridPresent ? 'var(--text)' : 'var(--red)';
+  document.getElementById('flow-grid-v').textContent = gridPresent ? `${gridV.toFixed(1)} V` : 'No grid';
 
-  // Grid
-  const gridDot = document.getElementById('grid-dot');
-  const gridText = document.getElementById('grid-text');
-  if (d.grid_present) {
-    gridDot.className = 'grid-dot grid-on';
-    gridText.textContent = 'ON';
-    gridText.style.color = 'var(--green)';
-  } else {
-    gridDot.className = 'grid-dot grid-off';
-    gridText.textContent = 'OFF';
-    gridText.style.color = 'var(--red)';
-  }
-  document.getElementById('grid-v').textContent = d.grid_voltage?.toFixed(1) ?? '--';
-  document.getElementById('grid-freq').textContent = d.grid_frequency?.toFixed(2) ?? '--';
+  // Load node
+  document.getElementById('flow-load').innerHTML = `${loadPower} <span class="node-sub">W</span>`;
 
-  // Modes
-  const outMode = document.getElementById('output-mode');
-  const modeName = d.output_mode_name || '--';
-  outMode.textContent = modeName;
-  outMode.className = 'mode-badge mode-' + modeName.toLowerCase();
+  // Inverter mode
+  document.getElementById('flow-inv-mode').textContent = outMode;
 
-  const chargeMode = document.getElementById('charge-mode');
-  chargeMode.textContent = d.charge_mode_name || '--';
+  // -- Animate flow lines --
+  updateFlowAnimations(d);
 
-  // Today stats
-  document.getElementById('pv-today').textContent = d.pv_generation_today?.toFixed(1) ?? '--';
-  document.getElementById('load-today').textContent = d.load_consumption_today?.toFixed(1) ?? '--';
-  document.getElementById('grid-today').textContent = d.grid_consumption_today?.toFixed(1) ?? '--';
+  // -- Header mode pill --
+  const pill = document.getElementById('header-mode');
+  pill.textContent = `${outMode} / ${chargeMode}`;
+  pill.className = 'mode-pill mode-pill-' + outMode.toLowerCase();
 
-  // Manual mode state
+  // -- Daily stats --
+  document.getElementById('pv-today').textContent = (d.pv_generation_today ?? 0).toFixed(1);
+  document.getElementById('load-today').textContent = (d.load_consumption_today ?? 0).toFixed(1);
+  document.getElementById('grid-today').textContent = (d.grid_consumption_today ?? 0).toFixed(1);
+  document.getElementById('charge-today').textContent = d.total_charge_power ?? 0;
+
+  // -- Detail cards --
+  document.getElementById('det-soc').textContent = soc;
+  document.getElementById('det-batt-v').textContent = battV?.toFixed(1) ?? '--';
+  document.getElementById('det-batt-i').textContent = battI.toFixed(1);
+  document.getElementById('det-pv1').textContent = d.pv1_power ?? '--';
+  document.getElementById('det-pv2').textContent = d.pv2_power ?? '--';
+  document.getElementById('det-pv-total').textContent = pvTotal;
+  document.getElementById('det-grid-v').textContent = gridV.toFixed(1);
+  document.getElementById('det-grid-hz').textContent = (d.grid_frequency ?? 0).toFixed(1);
+  document.getElementById('det-out-v').textContent = (d.output_voltage ?? 0).toFixed(1);
+  document.getElementById('det-load-i').textContent = (d.load_current ?? 0).toFixed(1);
+  document.getElementById('det-load-w').textContent = loadPower;
+
+  // -- Manual controls --
   isManual = d.manual_mode ?? false;
   updateControlButtons(d);
+
+  // -- Footer --
+  const ts = d.timestamp ? new Date(d.timestamp) : new Date();
+  document.getElementById('footer').textContent = `Updated: ${ts.toLocaleString()}`;
+}
+
+// ============================================================
+// Flow animation logic
+// ============================================================
+function setDots(prefix, count, active) {
+  for (let i = 0; i < count; i++) {
+    const dot = document.getElementById(`${prefix}-${i}`);
+    if (dot) dot.classList.toggle('active', active);
+  }
+}
+
+function updateFlowAnimations(d) {
+  const pvTotal = d.pv_total_power ?? 0;
+  const loadPower = d.load_power ?? 0;
+  const battI = d.battery_current ?? 0;
+  const gridPresent = d.grid_present;
+  const outMode = (d.output_mode_name || '').toUpperCase();
+
+  // Solar → Inverter: active when PV producing
+  const solarActive = pvTotal > 0;
+  document.getElementById('path-solar-inv').classList.toggle('active', solarActive);
+  setDots('dot-solar-inv', 3, solarActive);
+
+  // Battery flow: positive current = charging (inv→batt), negative = discharging (batt→inv)
+  const charging = battI > 0.5;
+  const discharging = battI < -0.5;
+  document.getElementById('path-inv-batt').classList.toggle('active', charging || discharging);
+  setDots('dot-inv-batt', 3, charging);     // Inverter → Battery
+  setDots('dot-batt-inv', 3, discharging);   // Battery → Inverter
+
+  // Grid flow: if UTI mode, grid → inverter; if SBU and grid present, might export
+  const gridImporting = gridPresent && (outMode === 'UTI' || outMode === 'SUB');
+  const gridIdle = gridPresent && !gridImporting;
+  document.getElementById('path-inv-grid').classList.toggle('active', gridPresent);
+  setDots('dot-grid-inv', 3, gridImporting);  // Grid → Inverter
+  setDots('dot-inv-grid', 3, false);          // No export on these inverters
+
+  // Inverter → Load: active when load > 0
+  const loadActive = loadPower > 0;
+  document.getElementById('path-inv-load').classList.toggle('active', loadActive);
+  setDots('dot-inv-load', 3, loadActive);
 }
 
 // ============================================================
 // Controls
 // ============================================================
 function updateControlButtons(d) {
-  const banner = document.getElementById('manual-banner');
-  banner.classList.toggle('active', isManual);
-
+  document.getElementById('manual-banner').classList.toggle('active', isManual);
   document.getElementById('btn-auto').classList.toggle('active', !isManual);
   document.getElementById('btn-manual').classList.toggle('active-orange', isManual);
-  document.getElementById('btn-manual').classList.toggle('active', false);
 
-  // Enable/disable mode buttons based on manual state
   ['btn-uti','btn-sbu','btn-sub','btn-sol','btn-snu','btn-oso'].forEach(id => {
     document.getElementById(id).disabled = !isManual;
   });
 
-  // Highlight current modes
-  const outMode = (d?.output_mode_name || '').toLowerCase();
+  const om = (d?.output_mode_name || '').toLowerCase();
   ['uti','sbu','sub','sol'].forEach(m => {
-    const btn = document.getElementById('btn-' + m);
-    btn.classList.toggle('active', outMode === m && isManual);
+    document.getElementById('btn-' + m).classList.toggle('active', om === m && isManual);
   });
-
-  const chargeMode = (d?.charge_mode_name || '').toLowerCase();
+  const cm = (d?.charge_mode_name || '').toLowerCase();
   ['snu','oso'].forEach(m => {
-    const btn = document.getElementById('btn-' + m);
-    btn.classList.toggle('active', chargeMode === m && isManual);
+    document.getElementById('btn-' + m).classList.toggle('active', cm === m && isManual);
   });
 }
 
-async function setControlMode(mode) {
-  await fetch(`/api/mode/${mode}`, { method: 'POST' });
-}
-
-async function setOutputMode(mode) {
-  await fetch(`/api/mode/output/${mode}`, { method: 'POST' });
-}
-
-async function setChargeMode(mode) {
-  await fetch(`/api/mode/charge/${mode}`, { method: 'POST' });
-}
+async function setControlMode(mode) { await fetch(`/api/mode/${mode}`, { method: 'POST' }); }
+async function setOutputMode(mode) { await fetch(`/api/mode/output/${mode}`, { method: 'POST' }); }
+async function setChargeMode(mode) { await fetch(`/api/mode/charge/${mode}`, { method: 'POST' }); }
 
 // ============================================================
 // Charts
 // ============================================================
-const chartColors = {
-  soc: '#38bdf8',
-  pv: '#eab308',
-  load: '#f97316',
-  grid: '#3b82f6',
-};
+const cc = { soc: '#38bdf8', pv: '#eab308', load: '#f97316', grid: '#3b82f6' };
 
-// History chart
-const historyCtx = document.getElementById('historyChart').getContext('2d');
-const historyChart = new Chart(historyCtx, {
+const historyChart = new Chart(document.getElementById('historyChart').getContext('2d'), {
   type: 'line',
   data: {
     labels: [],
     datasets: [
-      { label: 'SOC %', data: [], borderColor: chartColors.soc, backgroundColor: chartColors.soc + '20', fill: true, yAxisID: 'soc', tension: 0.3, pointRadius: 0 },
-      { label: 'PV (W)', data: [], borderColor: chartColors.pv, yAxisID: 'power', tension: 0.3, pointRadius: 0 },
-      { label: 'Load (W)', data: [], borderColor: chartColors.load, yAxisID: 'power', tension: 0.3, pointRadius: 0 },
+      { label: 'SOC %', data: [], borderColor: cc.soc, backgroundColor: cc.soc + '20', fill: true, yAxisID: 'soc', tension: 0.3, pointRadius: 0, borderWidth: 2 },
+      { label: 'PV (W)', data: [], borderColor: cc.pv, yAxisID: 'power', tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+      { label: 'Load (W)', data: [], borderColor: cc.load, yAxisID: 'power', tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
     ]
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     interaction: { intersect: false, mode: 'index' },
-    plugins: {
-      legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyleWidth: 16, font: { size: 11 } } },
-    },
+    plugins: { legend: { labels: { color: '#8888a8', usePointStyle: true, pointStyleWidth: 14, font: { size: 10 } } } },
     scales: {
-      x: {
-        ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 } },
-        grid: { color: '#1e293b' },
-      },
-      soc: {
-        type: 'linear', position: 'left', min: 0, max: 100,
-        ticks: { color: chartColors.soc, callback: v => v + '%' },
-        grid: { color: '#1e293b' },
-      },
-      power: {
-        type: 'linear', position: 'right', min: 0,
-        ticks: { color: '#94a3b8', callback: v => v + 'W' },
-        grid: { display: false },
-      },
+      x: { ticks: { color: '#555578', maxTicksLimit: 10, font: { size: 9 } }, grid: { color: '#2a2a45' } },
+      soc: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { color: cc.soc, callback: v => v + '%', font: { size: 9 } }, grid: { color: '#2a2a45' } },
+      power: { type: 'linear', position: 'right', min: 0, ticks: { color: '#8888a8', callback: v => v + 'W', font: { size: 9 } }, grid: { display: false } },
     }
   }
 });
 
 async function loadHistory(hours, btn) {
-  // Update active tab
   if (btn) {
     document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
   }
-
   try {
     const resp = await fetch(`/api/history?hours=${hours}`);
     const data = await resp.json();
-
-    // Downsample if too many points
-    const maxPoints = 500;
-    let sampled = data;
-    if (data.length > maxPoints) {
-      const step = Math.ceil(data.length / maxPoints);
-      sampled = data.filter((_, i) => i % step === 0);
-    }
-
-    historyChart.data.labels = sampled.map(r => {
-      const d = new Date(r.timestamp);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    });
-    historyChart.data.datasets[0].data = sampled.map(r => r.soc);
-    historyChart.data.datasets[1].data = sampled.map(r => r.pv_total_power || 0);
-    historyChart.data.datasets[2].data = sampled.map(r => r.load_power || 0);
+    const max = 500;
+    let s = data;
+    if (data.length > max) { const step = Math.ceil(data.length / max); s = data.filter((_, i) => i % step === 0); }
+    historyChart.data.labels = s.map(r => new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    historyChart.data.datasets[0].data = s.map(r => r.soc);
+    historyChart.data.datasets[1].data = s.map(r => r.pv_total_power || 0);
+    historyChart.data.datasets[2].data = s.map(r => r.load_power || 0);
     historyChart.update('none');
-  } catch (e) {
-    console.error('Failed to load history:', e);
-  }
+  } catch (e) { console.error('History load failed:', e); }
 }
 
-// Daily chart
-const dailyCtx = document.getElementById('dailyChart').getContext('2d');
-const dailyChart = new Chart(dailyCtx, {
+const dailyChart = new Chart(document.getElementById('dailyChart').getContext('2d'), {
   type: 'bar',
   data: {
     labels: [],
     datasets: [
-      { label: 'PV Gen', data: [], backgroundColor: chartColors.pv + 'cc' },
-      { label: 'Load', data: [], backgroundColor: chartColors.load + 'cc' },
-      { label: 'Grid', data: [], backgroundColor: chartColors.grid + 'cc' },
+      { label: 'PV Gen', data: [], backgroundColor: cc.pv + 'cc' },
+      { label: 'Load', data: [], backgroundColor: cc.load + 'cc' },
+      { label: 'Grid', data: [], backgroundColor: cc.grid + 'cc' },
     ]
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyleWidth: 16, font: { size: 11 } } },
-    },
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#8888a8', usePointStyle: true, pointStyleWidth: 14, font: { size: 10 } } } },
     scales: {
-      x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
-      y: {
-        ticks: { color: '#94a3b8', callback: v => v + ' kWh' },
-        grid: { color: '#1e293b' },
-      },
+      x: { ticks: { color: '#555578', font: { size: 9 } }, grid: { color: '#2a2a45' } },
+      y: { ticks: { color: '#8888a8', callback: v => v + ' kWh', font: { size: 9 } }, grid: { color: '#2a2a45' } },
     }
   }
 });
@@ -701,38 +703,31 @@ async function loadDaily() {
   try {
     const resp = await fetch('/api/daily?days=30');
     const data = await resp.json();
-    dailyChart.data.labels = data.map(r => r.date.slice(5)); // MM-DD
+    dailyChart.data.labels = data.map(r => r.date.slice(5));
     dailyChart.data.datasets[0].data = data.map(r => r.pv_generation_kwh || 0);
     dailyChart.data.datasets[1].data = data.map(r => r.load_consumption_kwh || 0);
     dailyChart.data.datasets[2].data = data.map(r => r.grid_consumption_kwh || 0);
     dailyChart.update('none');
-  } catch (e) {
-    console.error('Failed to load daily stats:', e);
-  }
+  } catch (e) { console.error('Daily load failed:', e); }
 }
 
 // ============================================================
-// Clock
+// Clock + Init
 // ============================================================
 function updateClock() {
   document.getElementById('clock').textContent =
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-// ============================================================
-// Init
-// ============================================================
 connectWS();
 loadHistory(6);
 loadDaily();
 updateClock();
 setInterval(updateClock, 1000);
-// Refresh charts periodically
 setInterval(() => {
-  const activeTab = document.querySelector('.chart-tab.active');
-  const hours = parseInt(activeTab?.textContent) || 6;
-  const hoursMap = { '6h': 6, '12h': 12, '24h': 24, '3d': 72, '7d': 168 };
-  loadHistory(hoursMap[activeTab?.textContent] || 6);
+  const tab = document.querySelector('.chart-tab.active');
+  const map = { '6h': 6, '12h': 12, '24h': 24, '3d': 72, '7d': 168 };
+  loadHistory(map[tab?.textContent] || 6);
 }, 60000);
 setInterval(loadDaily, 300000);
 </script>
