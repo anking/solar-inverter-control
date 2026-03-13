@@ -19,6 +19,7 @@ INVERTER_PASSWORD = int(os.environ.get("SOLAR_INVERTER_PASSWORD", "6666"))
 # =============================================================================
 
 LOW_THRESHOLD = int(os.environ.get("SOLAR_LOW_THRESHOLD", "82"))
+CHARGE_THRESHOLD = int(os.environ.get("SOLAR_CHARGE_THRESHOLD", "85"))
 HIGH_THRESHOLD = int(os.environ.get("SOLAR_HIGH_THRESHOLD", "92"))
 
 # =============================================================================

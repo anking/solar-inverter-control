@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import (
     SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS,
-    LOW_THRESHOLD, HIGH_THRESHOLD, POLL_INTERVAL,
+    LOW_THRESHOLD, CHARGE_THRESHOLD, HIGH_THRESHOLD, POLL_INTERVAL,
     WEB_HOST, WEB_PORT, LOG_FILE,
     MODE_UTI, MODE_SBU, MODE_SUB, MODE_SOL,
     CHARGE_SNU, CHARGE_OSO,
@@ -125,8 +125,9 @@ async def control_loop():
 
     logging.info("=" * 60)
     logging.info("Solar Controller + Dashboard Starting")
-    logging.info(f"  Low threshold:  {LOW_THRESHOLD}% (switch to UTI)")
-    logging.info(f"  High threshold: {HIGH_THRESHOLD}% (switch to SBU)")
+    logging.info(f"  Low threshold:  {LOW_THRESHOLD}% (grid charge → SUB/SNU)")
+    logging.info(f"  Charge target:  {CHARGE_THRESHOLD}% (stop grid charge → UTI/OSO)")
+    logging.info(f"  High threshold: {HIGH_THRESHOLD}% (use battery → SBU/OSO)")
     logging.info(f"  Poll interval:  {POLL_INTERVAL}s")
     logging.info("=" * 60)
 
@@ -189,15 +190,21 @@ async def control_loop():
             )
 
             # --- CONTROL LOGIC (skip if manual override) ---
+            # States:
+            #   SOC <= 82% (LOW)  → SUB/SNU: grid charges battery actively
+            #   82% < SOC < 85%  → SUB/SNU: keep charging until topped off
+            #   SOC >= 85% (CHARGED) → UTI/OSO: grid powers load, solar-only charge
+            #   SOC >= 92% (HIGH) → SBU/OSO: battery powers load
+            #   Grid down → SBU: battery backup
             if not manual_mode:
                 if startup:
-                    # Set initial mode
                     if soc >= HIGH_THRESHOLD:
                         await asyncio.to_thread(controller.set_output_mode, MODE_SBU)
                         await asyncio.sleep(0.5)
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
-                    elif soc <= LOW_THRESHOLD:
-                        await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
+                    elif soc <= CHARGE_THRESHOLD:
+                        logging.info(f"Startup: SOC {soc}% <= {CHARGE_THRESHOLD}% → SUB/SNU (grid charging)")
+                        await asyncio.to_thread(controller.set_output_mode, MODE_SUB)
                         await asyncio.sleep(0.5)
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_SNU)
                     else:
@@ -206,29 +213,51 @@ async def control_loop():
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
                     startup = False
 
-                # Grid down
+                # Grid down — battery backup
                 if not grid_present:
                     if not controller.grid_was_down:
-                        logging.warning("GRID DOWN - SBU for battery backup")
+                        logging.warning("GRID DOWN — SBU for battery backup")
                         controller.grid_was_down = True
                     if current_mode != MODE_SBU:
                         await asyncio.to_thread(controller.set_output_mode, MODE_SBU)
 
                 elif controller.grid_was_down and grid_present:
-                    logging.info("GRID RESTORED - resuming SOC control")
+                    logging.info("GRID RESTORED — resuming SOC control")
                     controller.grid_was_down = False
 
-                # SOC low
+                # SOC low — actively charge from grid
                 if grid_present and soc <= LOW_THRESHOLD:
-                    if current_mode != MODE_UTI:
-                        logging.info(f"SOC {soc}% <= {LOW_THRESHOLD}% → UTI")
-                        await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
+                    if current_mode != MODE_SUB:
+                        logging.info(f"SOC {soc}% <= {LOW_THRESHOLD}% → SUB (grid charging)")
+                        await asyncio.to_thread(controller.set_output_mode, MODE_SUB)
                         await asyncio.sleep(0.5)
                     if status["charge_mode"] != CHARGE_SNU:
                         logging.info(f"SOC {soc}% <= {LOW_THRESHOLD}% → SNU")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_SNU)
 
-                # SOC high
+                # SOC charging — keep SUB/SNU until topped off at CHARGE_THRESHOLD
+                elif grid_present and LOW_THRESHOLD < soc < CHARGE_THRESHOLD:
+                    if current_mode == MODE_SUB:
+                        # Already charging from grid, keep going until 85%
+                        pass
+                    elif current_mode != MODE_UTI:
+                        # Not charging and not UTI — go to UTI/OSO
+                        await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
+                        await asyncio.sleep(0.5)
+                        if status["charge_mode"] != CHARGE_OSO:
+                            await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
+
+                # SOC topped off — grid powers load, solar-only charging
+                elif grid_present and CHARGE_THRESHOLD <= soc < HIGH_THRESHOLD:
+                    if current_mode != MODE_UTI:
+                        logging.info(f"SOC {soc}% >= {CHARGE_THRESHOLD}% → UTI (charged)")
+                        await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
+                        await asyncio.sleep(0.5)
+                    if status["charge_mode"] != CHARGE_OSO:
+                        logging.info(f"SOC {soc}% >= {CHARGE_THRESHOLD}% → OSO")
+                        await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
+
+                # SOC high — use battery
                 elif grid_present and soc >= HIGH_THRESHOLD:
                     if current_mode != MODE_SBU:
                         logging.info(f"SOC {soc}% >= {HIGH_THRESHOLD}% → SBU")
@@ -237,11 +266,6 @@ async def control_loop():
                     if status["charge_mode"] != CHARGE_OSO:
                         logging.info(f"SOC {soc}% >= {HIGH_THRESHOLD}% → OSO")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
-
-                # Hysteresis
-                elif grid_present and LOW_THRESHOLD < soc < HIGH_THRESHOLD:
-                    if status["charge_mode"] != CHARGE_OSO:
-                        logging.info(f"SOC {soc}% hysteresis → OSO")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
             # Broadcast to WebSocket clients
