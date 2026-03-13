@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Inverter Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --text: #f1f5f9;
+    --text-dim: #94a3b8;
+    --accent: #38bdf8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f97316;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--surface2);
+  }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+  }
+  .status-dot.connected { background: var(--green); }
+
+  /* Manual override banner */
+  .manual-banner {
+    background: var(--orange);
+    color: #000;
+    text-align: center;
+    padding: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    display: none;
+  }
+  .manual-banner.active { display: block; }
+
+  /* Grid layout */
+  .dashboard {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--surface2);
+  }
+  .card-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  /* SOC card - big prominent display */
+  .soc-card {
+    grid-column: span 1;
+    text-align: center;
+  }
+  .soc-value {
+    font-size: 72px;
+    font-weight: 700;
+    line-height: 1;
+    margin: 8px 0;
+  }
+  .soc-bar-bg {
+    width: 100%;
+    height: 12px;
+    background: var(--surface2);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 12px;
+  }
+  .soc-bar {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.5s ease, background 0.5s ease;
+  }
+  .soc-thresholds {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Value display */
+  .metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--surface2);
+  }
+  .metric:last-child { border-bottom: none; }
+  .metric-label { font-size: 14px; color: var(--text-dim); }
+  .metric-value { font-size: 20px; font-weight: 600; }
+  .metric-unit { font-size: 13px; color: var(--text-dim); margin-left: 2px; }
+
+  /* Mode badges */
+  .mode-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .mode-sbu { background: rgba(34,197,94,0.2); color: var(--green); }
+  .mode-uti { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .mode-sub { background: rgba(168,85,247,0.2); color: var(--purple); }
+  .mode-sol { background: rgba(234,179,8,0.2); color: var(--yellow); }
+
+  /* Grid status */
+  .grid-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .grid-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+  }
+  .grid-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .grid-off { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Control panel */
+  .control-card { grid-column: 1 / -1; }
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .control-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    min-width: 100px;
+  }
+  .btn {
+    padding: 8px 16px;
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: #475569; }
+  .btn.active {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+  }
+  .btn.active-orange {
+    background: var(--orange);
+    color: #000;
+    border-color: var(--orange);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Charts */
+  .chart-card {
+    grid-column: 1 / -1;
+  }
+  .chart-container {
+    position: relative;
+    height: 250px;
+  }
+  .chart-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .chart-tab {
+    padding: 4px 12px;
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    border: none;
+  }
+  .chart-tab.active { background: var(--accent); color: #000; }
+
+  /* Daily stats table */
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .stats-table th {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid var(--surface2);
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .stats-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--surface2);
+  }
+
+  /* Today stats */
+  .today-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .today-stat {
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+  }
+  .today-stat-value {
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .today-stat-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .dashboard { padding: 8px; gap: 8px; }
+    .soc-value { font-size: 56px; }
+    .card { padding: 14px; }
+    .metric-value { font-size: 16px; }
+    .header h1 { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Solar Inverter Dashboard</h1>
+  <div class="status">
+    <span id="clock"></span>
+    <div class="status-dot" id="ws-status"></div>
+    <span id="ws-label">Connecting...</span>
+  </div>
+</div>
+
+<div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE — Automatic SOC control is paused</div>
+
+<div class="dashboard">
+
+  <!-- SOC -->
+  <div class="card soc-card">
+    <div class="card-title">Battery State of Charge</div>
+    <div class="soc-value" id="soc">--<span class="metric-unit">%</span></div>
+    <div class="soc-bar-bg">
+      <div class="soc-bar" id="soc-bar" style="width:0%"></div>
+    </div>
+    <div class="soc-thresholds">
+      <span>0%</span>
+      <span>UTI &le;82%</span>
+      <span>SBU &ge;92%</span>
+      <span>100%</span>
+    </div>
+  </div>
+
+  <!-- Battery -->
+  <div class="card">
+    <div class="card-title">Battery</div>
+    <div class="metric">
+      <span class="metric-label">Voltage</span>
+      <span><span class="metric-value" id="batt-v">--</span><span class="metric-unit">V</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Current</span>
+      <span><span class="metric-value" id="batt-i">--</span><span class="metric-unit">A</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Charge Power</span>
+      <span><span class="metric-value" id="charge-power">--</span><span class="metric-unit">W</span></span>
+    </div>
+  </div>
+
+  <!-- Solar PV -->
+  <div class="card">
+    <div class="card-title">Solar PV</div>
+    <div class="metric">
+      <span class="metric-label">PV1 Power</span>
+      <span><span class="metric-value" id="pv1">--</span><span class="metric-unit">W</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">PV2 Power</span>
+      <span><span class="metric-value" id="pv2">--</span><span class="metric-unit">W</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Total PV</span>
+      <span><span class="metric-value" id="pv-total" style="color:var(--yellow)">--</span><span class="metric-unit">W</span></span>
+    </div>
+  </div>
+
+  <!-- Load -->
+  <div class="card">
+    <div class="card-title">Load</div>
+    <div class="metric">
+      <span class="metric-label">Active Power</span>
+      <span><span class="metric-value" id="load-power">--</span><span class="metric-unit">W</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Current</span>
+      <span><span class="metric-value" id="load-current">--</span><span class="metric-unit">A</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Output Voltage</span>
+      <span><span class="metric-value" id="output-v">--</span><span class="metric-unit">V</span></span>
+    </div>
+  </div>
+
+  <!-- Grid + Mode -->
+  <div class="card">
+    <div class="card-title">Grid &amp; Mode</div>
+    <div class="metric">
+      <span class="metric-label">Grid</span>
+      <span class="grid-status">
+        <span class="grid-dot" id="grid-dot"></span>
+        <span id="grid-text">--</span>
+      </span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Grid Voltage</span>
+      <span><span class="metric-value" id="grid-v">--</span><span class="metric-unit">V</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Grid Frequency</span>
+      <span><span class="metric-value" id="grid-freq">--</span><span class="metric-unit">Hz</span></span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Output Mode</span>
+      <span class="mode-badge" id="output-mode">--</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Charge Mode</span>
+      <span class="mode-badge" id="charge-mode">--</span>
+    </div>
+  </div>
+
+  <!-- Today's Stats -->
+  <div class="card">
+    <div class="card-title">Today's Energy</div>
+    <div class="today-stats">
+      <div class="today-stat">
+        <div class="today-stat-value" id="pv-today" style="color:var(--yellow)">--</div>
+        <div class="today-stat-label">PV Generation (kWh)</div>
+      </div>
+      <div class="today-stat">
+        <div class="today-stat-value" id="load-today" style="color:var(--orange)">--</div>
+        <div class="today-stat-label">Load Usage (kWh)</div>
+      </div>
+      <div class="today-stat">
+        <div class="today-stat-value" id="grid-today" style="color:var(--blue)">--</div>
+        <div class="today-stat-label">Grid Usage (kWh)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card control-card">
+    <div class="card-title">Manual Controls</div>
+    <div class="control-row">
+      <span class="control-label">Control Mode</span>
+      <button class="btn active" id="btn-auto" onclick="setControlMode('auto')">AUTO</button>
+      <button class="btn" id="btn-manual" onclick="setControlMode('manual')">MANUAL</button>
+    </div>
+    <div class="control-row">
+      <span class="control-label">Output Mode</span>
+      <button class="btn" id="btn-uti" onclick="setOutputMode('uti')" disabled>UTI</button>
+      <button class="btn" id="btn-sbu" onclick="setOutputMode('sbu')" disabled>SBU</button>
+      <button class="btn" id="btn-sub" onclick="setOutputMode('sub')" disabled>SUB</button>
+      <button class="btn" id="btn-sol" onclick="setOutputMode('sol')" disabled>SOL</button>
+    </div>
+    <div class="control-row">
+      <span class="control-label">Charge Mode</span>
+      <button class="btn" id="btn-snu" onclick="setChargeMode('snu')" disabled>SNU (PV+Grid)</button>
+      <button class="btn" id="btn-oso" onclick="setChargeMode('oso')" disabled>OSO (PV Only)</button>
+    </div>
+  </div>
+
+  <!-- SOC History Chart -->
+  <div class="card chart-card">
+    <div class="card-title">History</div>
+    <div class="chart-tabs">
+      <button class="chart-tab active" onclick="loadHistory(6, this)">6h</button>
+      <button class="chart-tab" onclick="loadHistory(12, this)">12h</button>
+      <button class="chart-tab" onclick="loadHistory(24, this)">24h</button>
+      <button class="chart-tab" onclick="loadHistory(72, this)">3d</button>
+      <button class="chart-tab" onclick="loadHistory(168, this)">7d</button>
+    </div>
+    <div class="chart-container">
+      <canvas id="historyChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Daily Stats Chart -->
+  <div class="card chart-card">
+    <div class="card-title">Daily Energy (kWh)</div>
+    <div class="chart-container">
+      <canvas id="dailyChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// WebSocket connection
+// ============================================================
+let ws;
+let reconnectTimer;
+let isManual = false;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-status').classList.add('connected');
+    document.getElementById('ws-label').textContent = 'Connected';
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    updateDashboard(data);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-status').classList.remove('connected');
+    document.getElementById('ws-label').textContent = 'Reconnecting...';
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// ============================================================
+// Dashboard update
+// ============================================================
+function updateDashboard(d) {
+  // SOC
+  const soc = d.soc ?? 0;
+  document.getElementById('soc').innerHTML = `${soc}<span class="metric-unit">%</span>`;
+  const bar = document.getElementById('soc-bar');
+  bar.style.width = soc + '%';
+  if (soc <= 82) bar.style.background = 'var(--red)';
+  else if (soc <= 92) bar.style.background = 'var(--yellow)';
+  else bar.style.background = 'var(--green)';
+
+  // Battery
+  document.getElementById('batt-v').textContent = d.battery_voltage?.toFixed(1) ?? '--';
+  document.getElementById('batt-i').textContent = d.battery_current?.toFixed(1) ?? '--';
+  document.getElementById('charge-power').textContent = d.total_charge_power ?? '--';
+
+  // PV
+  document.getElementById('pv1').textContent = d.pv1_power ?? '--';
+  document.getElementById('pv2').textContent = d.pv2_power ?? '--';
+  document.getElementById('pv-total').textContent = d.pv_total_power ?? '--';
+
+  // Load
+  document.getElementById('load-power').textContent = d.load_power ?? '--';
+  document.getElementById('load-current').textContent = d.load_current?.toFixed(1) ?? '--';
+  document.getElementById('output-v').textContent = d.output_voltage?.toFixed(1) ?? '--';
+
+  // Grid
+  const gridDot = document.getElementById('grid-dot');
+  const gridText = document.getElementById('grid-text');
+  if (d.grid_present) {
+    gridDot.className = 'grid-dot grid-on';
+    gridText.textContent = 'ON';
+    gridText.style.color = 'var(--green)';
+  } else {
+    gridDot.className = 'grid-dot grid-off';
+    gridText.textContent = 'OFF';
+    gridText.style.color = 'var(--red)';
+  }
+  document.getElementById('grid-v').textContent = d.grid_voltage?.toFixed(1) ?? '--';
+  document.getElementById('grid-freq').textContent = d.grid_frequency?.toFixed(2) ?? '--';
+
+  // Modes
+  const outMode = document.getElementById('output-mode');
+  const modeName = d.output_mode_name || '--';
+  outMode.textContent = modeName;
+  outMode.className = 'mode-badge mode-' + modeName.toLowerCase();
+
+  const chargeMode = document.getElementById('charge-mode');
+  chargeMode.textContent = d.charge_mode_name || '--';
+
+  // Today stats
+  document.getElementById('pv-today').textContent = d.pv_generation_today?.toFixed(1) ?? '--';
+  document.getElementById('load-today').textContent = d.load_consumption_today?.toFixed(1) ?? '--';
+  document.getElementById('grid-today').textContent = d.grid_consumption_today?.toFixed(1) ?? '--';
+
+  // Manual mode state
+  isManual = d.manual_mode ?? false;
+  updateControlButtons(d);
+}
+
+// ============================================================
+// Controls
+// ============================================================
+function updateControlButtons(d) {
+  const banner = document.getElementById('manual-banner');
+  banner.classList.toggle('active', isManual);
+
+  document.getElementById('btn-auto').classList.toggle('active', !isManual);
+  document.getElementById('btn-manual').classList.toggle('active-orange', isManual);
+  document.getElementById('btn-manual').classList.toggle('active', false);
+
+  // Enable/disable mode buttons based on manual state
+  ['btn-uti','btn-sbu','btn-sub','btn-sol','btn-snu','btn-oso'].forEach(id => {
+    document.getElementById(id).disabled = !isManual;
+  });
+
+  // Highlight current modes
+  const outMode = (d?.output_mode_name || '').toLowerCase();
+  ['uti','sbu','sub','sol'].forEach(m => {
+    const btn = document.getElementById('btn-' + m);
+    btn.classList.toggle('active', outMode === m && isManual);
+  });
+
+  const chargeMode = (d?.charge_mode_name || '').toLowerCase();
+  ['snu','oso'].forEach(m => {
+    const btn = document.getElementById('btn-' + m);
+    btn.classList.toggle('active', chargeMode === m && isManual);
+  });
+}
+
+async function setControlMode(mode) {
+  await fetch(`/api/mode/${mode}`, { method: 'POST' });
+}
+
+async function setOutputMode(mode) {
+  await fetch(`/api/mode/output/${mode}`, { method: 'POST' });
+}
+
+async function setChargeMode(mode) {
+  await fetch(`/api/mode/charge/${mode}`, { method: 'POST' });
+}
+
+// ============================================================
+// Charts
+// ============================================================
+const chartColors = {
+  soc: '#38bdf8',
+  pv: '#eab308',
+  load: '#f97316',
+  grid: '#3b82f6',
+};
+
+// History chart
+const historyCtx = document.getElementById('historyChart').getContext('2d');
+const historyChart = new Chart(historyCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'SOC %', data: [], borderColor: chartColors.soc, backgroundColor: chartColors.soc + '20', fill: true, yAxisID: 'soc', tension: 0.3, pointRadius: 0 },
+      { label: 'PV (W)', data: [], borderColor: chartColors.pv, yAxisID: 'power', tension: 0.3, pointRadius: 0 },
+      { label: 'Load (W)', data: [], borderColor: chartColors.load, yAxisID: 'power', tension: 0.3, pointRadius: 0 },
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyleWidth: 16, font: { size: 11 } } },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 } },
+        grid: { color: '#1e293b' },
+      },
+      soc: {
+        type: 'linear', position: 'left', min: 0, max: 100,
+        ticks: { color: chartColors.soc, callback: v => v + '%' },
+        grid: { color: '#1e293b' },
+      },
+      power: {
+        type: 'linear', position: 'right', min: 0,
+        ticks: { color: '#94a3b8', callback: v => v + 'W' },
+        grid: { display: false },
+      },
+    }
+  }
+});
+
+async function loadHistory(hours, btn) {
+  // Update active tab
+  if (btn) {
+    document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  try {
+    const resp = await fetch(`/api/history?hours=${hours}`);
+    const data = await resp.json();
+
+    // Downsample if too many points
+    const maxPoints = 500;
+    let sampled = data;
+    if (data.length > maxPoints) {
+      const step = Math.ceil(data.length / maxPoints);
+      sampled = data.filter((_, i) => i % step === 0);
+    }
+
+    historyChart.data.labels = sampled.map(r => {
+      const d = new Date(r.timestamp);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+    historyChart.data.datasets[0].data = sampled.map(r => r.soc);
+    historyChart.data.datasets[1].data = sampled.map(r => r.pv_total_power || 0);
+    historyChart.data.datasets[2].data = sampled.map(r => r.load_power || 0);
+    historyChart.update('none');
+  } catch (e) {
+    console.error('Failed to load history:', e);
+  }
+}
+
+// Daily chart
+const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+const dailyChart = new Chart(dailyCtx, {
+  type: 'bar',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'PV Gen', data: [], backgroundColor: chartColors.pv + 'cc' },
+      { label: 'Load', data: [], backgroundColor: chartColors.load + 'cc' },
+      { label: 'Grid', data: [], backgroundColor: chartColors.grid + 'cc' },
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', usePointStyle: true, pointStyleWidth: 16, font: { size: 11 } } },
+    },
+    scales: {
+      x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+      y: {
+        ticks: { color: '#94a3b8', callback: v => v + ' kWh' },
+        grid: { color: '#1e293b' },
+      },
+    }
+  }
+});
+
+async function loadDaily() {
+  try {
+    const resp = await fetch('/api/daily?days=30');
+    const data = await resp.json();
+    dailyChart.data.labels = data.map(r => r.date.slice(5)); // MM-DD
+    dailyChart.data.datasets[0].data = data.map(r => r.pv_generation_kwh || 0);
+    dailyChart.data.datasets[1].data = data.map(r => r.load_consumption_kwh || 0);
+    dailyChart.data.datasets[2].data = data.map(r => r.grid_consumption_kwh || 0);
+    dailyChart.update('none');
+  } catch (e) {
+    console.error('Failed to load daily stats:', e);
+  }
+}
+
+// ============================================================
+// Clock
+// ============================================================
+function updateClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ============================================================
+// Init
+// ============================================================
+connectWS();
+loadHistory(6);
+loadDaily();
+updateClock();
+setInterval(updateClock, 1000);
+// Refresh charts periodically
+setInterval(() => {
+  const activeTab = document.querySelector('.chart-tab.active');
+  const hours = parseInt(activeTab?.textContent) || 6;
+  const hoursMap = { '6h': 6, '12h': 12, '24h': 24, '3d': 72, '7d': 168 };
+  loadHistory(hoursMap[activeTab?.textContent] || 6);
+}, 60000);
+setInterval(loadDaily, 300000);
+</script>
+</body>
+</html>

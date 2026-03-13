@@ -1,0 +1,28 @@
+[Unit]
+Description=Solar Inverter Controller & Web Dashboard
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/solar-inverter-control
+ExecStart=/home/pi/solar-inverter-control/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=10
+
+# Allow access to USB serial device
+SupplementaryGroups=dialout
+
+# Environment
+Environment=SOLAR_DB_PATH=/home/pi/solar_data.db
+Environment=SOLAR_LOG_FILE=/home/pi/solar_controller.log
+
+# Hardening
+ProtectSystem=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
