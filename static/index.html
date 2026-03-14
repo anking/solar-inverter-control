@@ -558,6 +558,44 @@
   @media (max-width: 415px) {
     .header h1 { font-size: 15px; }
   }
+
+  /* =========== NWS ALERT BANNER =========== */
+  .alert-banner {
+    background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 100%);
+    border: 2px solid #ff5252;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    animation: alert-pulse 2s ease-in-out infinite;
+  }
+  .alert-banner.severity-moderate {
+    background: linear-gradient(135deg, #e65100 0%, #f57c00 100%);
+    border-color: #ffab40;
+    animation: none;
+  }
+  .alert-banner-title {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 14px; color: #fff;
+    margin-bottom: 4px;
+  }
+  .alert-banner-headline {
+    font-size: 12px; color: rgba(255,255,255,0.9); line-height: 1.4;
+  }
+  .alert-banner-details {
+    font-size: 11px; color: rgba(255,255,255,0.75); margin-top: 6px;
+    max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+  }
+  .alert-banner-details.expanded { max-height: 300px; overflow-y: auto; }
+  .alert-toggle {
+    background: none; border: none; color: rgba(255,255,255,0.8);
+    font-size: 11px; cursor: pointer; padding: 2px 0; margin-top: 4px;
+    text-decoration: underline;
+  }
+  .alert-toggle:hover { color: #fff; }
+  @keyframes alert-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(255,82,82,0.3); }
+    50% { box-shadow: 0 0 20px rgba(255,82,82,0.6); }
+  }
 </style>
 </head>
 <body>
@@ -587,11 +625,17 @@
   <a href="#" data-page="config" onclick="navigateTo('config', event)">
     <span class="nav-icon">&#9881;</span> Configuration
   </a>
+  <a href="#" data-page="debug" onclick="navigateTo('debug', event)">
+    <span class="nav-icon">&#128269;</span> Debug
+  </a>
 </div>
 
 <div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE</div>
 
 <div class="page active" id="page-dashboard">
+
+  <!-- =============== NWS ALERT BANNER =============== -->
+  <div id="nws-alerts-container"></div>
 
   <!-- =============== ENERGY FLOW DIAGRAM =============== -->
   <div class="flow-diagram" id="flow-diagram">
@@ -979,6 +1023,67 @@
   </div>
 </div>
 
+<!-- =============== DEBUG PAGE =============== -->
+<div class="page" id="page-debug">
+
+  <!-- Test Alert Banner -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Test Alert Banner</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn" onclick="testAlert('Tornado Warning','Extreme')">Tornado Warning</button>
+      <button class="btn" onclick="testAlert('Severe Thunderstorm Warning','Severe')">Severe T-Storm</button>
+      <button class="btn" onclick="testAlert('Winter Storm Warning','Severe')">Winter Storm</button>
+      <button class="btn" onclick="testAlert('High Wind Warning','Moderate')">High Wind</button>
+      <button class="btn" onclick="testAlert('Heat Advisory','Minor')">Heat Advisory</button>
+      <button class="btn" onclick="clearTestAlerts()">Clear Alerts</button>
+    </div>
+    <div id="test-alerts-container"></div>
+  </div>
+
+  <!-- Smart Mode Decision Engine -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Smart Mode Decision Engine</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn" onclick="loadSmartDebug()">Refresh</button>
+      <span id="debug-smart-status" style="font-size:12px;color:var(--text-dim);align-self:center"></span>
+    </div>
+
+    <!-- Current Decision -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">Current Decision</div>
+      <div id="debug-smart-decision" style="font-size:13px;color:var(--text);background:var(--surface2);padding:8px 10px;border-radius:6px;font-family:monospace"></div>
+    </div>
+
+    <!-- Decision Trace -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">Decision Trace (Priority Order)</div>
+      <div id="debug-decision-trace"></div>
+    </div>
+
+    <!-- Weather Score -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">Weather Score (Next 6h)</div>
+      <div id="debug-weather-score" style="font-size:12px;font-family:monospace;background:var(--surface2);padding:8px 10px;border-radius:6px;line-height:1.6"></div>
+    </div>
+
+    <!-- NWS Alerts Raw -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">NWS Active Alerts</div>
+      <div id="debug-nws-alerts" style="font-size:12px;font-family:monospace;background:var(--surface2);padding:8px 10px;border-radius:6px;line-height:1.6"></div>
+    </div>
+  </div>
+
+  <!-- Raw Weather Data -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Raw Weather Data</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn" onclick="loadRawWeather()">Refresh</button>
+      <span id="debug-weather-status" style="font-size:12px;color:var(--text-dim);align-self:center"></span>
+    </div>
+    <div id="debug-raw-weather" style="font-size:11px;font-family:monospace;background:var(--surface2);padding:8px 10px;border-radius:6px;max-height:400px;overflow:auto;white-space:pre-wrap;line-height:1.4;color:var(--text-dim)"></div>
+  </div>
+</div>
+
 <!-- Debug Log Panel -->
 <button class="debug-toggle" id="debug-toggle" onclick="toggleDebug()">Debug Log</button>
 <div class="debug-panel" id="debug-panel">
@@ -1062,6 +1167,7 @@ function navigateTo(page, e) {
   location.hash = page;
   // Re-init slider drag when config page shown (elements now visible)
   if (page === 'config') initSliderDrag();
+  if (page === 'debug') { loadSmartDebug(); loadRawWeather(); }
 }
 
 // Restore page from URL hash on load
@@ -1074,6 +1180,7 @@ function navigateTo(page, e) {
       a.classList.toggle('active', a.dataset.page === hash);
     });
     if (hash === 'config') setTimeout(initSliderDrag, 0);
+    if (hash === 'debug') setTimeout(() => { loadSmartDebug(); loadRawWeather(); }, 100);
   }
 })();
 
@@ -1258,6 +1365,7 @@ function updateControlButtons(d) {
   if (d?.smart_enabled !== undefined) smartEnabled = d.smart_enabled;
   if (d?.smart_effective) smartEffective = d.smart_effective;
   if (d?.smart_reason !== undefined) smartReason = d.smart_reason;
+  if (d?.nws_alerts !== undefined) renderNWSAlerts(d.nws_alerts);
   updateAutoModesUI();
 }
 
@@ -1778,6 +1886,30 @@ function cloudBar(pct) {
   return `<div class="wh-cloud"><div class="wh-cloud-fill" style="width:${pct}%;background:${color}"></div></div>`;
 }
 
+function renderNWSAlerts(alerts) {
+  const container = document.getElementById('nws-alerts-container');
+  if (!container) return;
+  if (!alerts || alerts.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  let html = '';
+  for (const a of alerts) {
+    const isSevere = a.severity === 'Extreme' || a.severity === 'Severe';
+    const cls = isSevere ? 'alert-banner' : 'alert-banner severity-moderate';
+    const icon = isSevere ? '&#9888;' : '&#9432;';
+    const id = 'alert-' + Math.random().toString(36).slice(2, 8);
+    const instruction = a.instruction ? `<br><b>Action:</b> ${a.instruction.replace(/\n/g, ' ')}` : '';
+    html += `<div class="${cls}">
+      <div class="alert-banner-title">${icon} ${a.event} <span style="font-weight:400;font-size:11px;opacity:0.8">(${a.severity})</span></div>
+      <div class="alert-banner-headline">${a.headline}</div>
+      <button class="alert-toggle" onclick="document.getElementById('${id}').classList.toggle('expanded');this.textContent=this.textContent==='Show details'?'Hide details':'Show details'">Show details</button>
+      <div class="alert-banner-details" id="${id}">${a.description ? a.description.replace(/\n/g, '<br>') : ''}${instruction}</div>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
 async function loadWeather() {
   let data;
   try {
@@ -1800,6 +1932,9 @@ async function loadWeather() {
 
   if (data.weather && data.weather.hourly) {
     renderWeather(data.weather);
+  }
+  if (data.alerts) {
+    renderNWSAlerts(data.alerts);
   }
 }
 
@@ -1949,6 +2084,173 @@ function cancelWeatherZipChange() {
   document.getElementById('weather-setup').style.display = 'none';
   document.getElementById('weather-content').style.display = '';
   document.getElementById('weather-zip-cancel').style.display = 'none';
+}
+
+// ============================================================
+// Debug Page
+// ============================================================
+function testAlert(event, severity) {
+  const alerts = [{
+    event: event,
+    severity: severity,
+    urgency: 'Immediate',
+    headline: `TEST: ${event} in effect for your area until 9:00 PM EST`,
+    description: `This is a test alert for debugging purposes.\nThe ${event} has been issued to verify the alert banner display.\nNo actual emergency exists.`,
+    instruction: severity === 'Extreme' ? 'TAKE SHELTER IMMEDIATELY in an interior room.' : 'Monitor conditions and be prepared.',
+    expires: new Date(Date.now() + 3600000).toISOString(),
+  }];
+  // Show in both test container and main dashboard
+  renderNWSAlerts(alerts);
+  const testContainer = document.getElementById('test-alerts-container');
+  if (testContainer) {
+    let html = '';
+    for (const a of alerts) {
+      const isSevere = a.severity === 'Extreme' || a.severity === 'Severe';
+      const cls = isSevere ? 'alert-banner' : 'alert-banner severity-moderate';
+      const icon = isSevere ? '&#9888;' : '&#9432;';
+      html += `<div class="${cls}">
+        <div class="alert-banner-title">${icon} ${a.event} <span style="font-weight:400;font-size:11px;opacity:0.8">(${a.severity})</span></div>
+        <div class="alert-banner-headline">${a.headline}</div>
+      </div>`;
+    }
+    testContainer.innerHTML = html;
+  }
+}
+
+function clearTestAlerts() {
+  document.getElementById('nws-alerts-container').innerHTML = '';
+  document.getElementById('test-alerts-container').innerHTML = '';
+}
+
+async function loadSmartDebug() {
+  const statusEl = document.getElementById('debug-smart-status');
+  statusEl.textContent = 'Loading...';
+  try {
+    const r = await fetch('/api/smart');
+    const data = await r.json();
+
+    // Current decision
+    const decEl = document.getElementById('debug-smart-decision');
+    decEl.innerHTML = `<span style="color:${data.enabled ? 'var(--green)' : 'var(--red)'}">${data.enabled ? 'ENABLED' : 'DISABLED'}</span>` +
+      ` | Profile: <span style="color:var(--accent)">${data.effective_profile}</span>` +
+      ` | SOC: ${data.current_soc}%` +
+      ` | Reason: <span style="color:var(--yellow)">${data.reason}</span>` +
+      (data.last_switch ? `\nLast switch: ${new Date(data.last_switch * 1000).toLocaleString()}` : '');
+
+    // Decision trace
+    const traceEl = document.getElementById('debug-decision-trace');
+    if (data.decision_trace && data.decision_trace.length) {
+      let html = '<table style="width:100%;font-size:11px;font-family:monospace;border-collapse:collapse">';
+      html += '<tr style="color:var(--accent);text-align:left"><th style="padding:4px 8px">Rule</th><th style="padding:4px 8px">Check</th><th style="padding:4px 8px">Result</th></tr>';
+      for (const t of data.decision_trace) {
+        const color = t.triggered ? (t.result === 'pure_backup' ? 'var(--red)' : t.result === 'max_solar' ? 'var(--yellow)' : t.result === 'balanced' ? 'var(--green)' : 'var(--text)') : 'var(--text-dim)';
+        const bg = t.triggered ? 'rgba(56,189,248,0.08)' : 'transparent';
+        const marker = t.triggered ? '>>> ' : '    ';
+        html += `<tr style="color:${color};background:${bg}">`;
+        html += `<td style="padding:4px 8px;white-space:nowrap">${marker}${t.rule}</td>`;
+        html += `<td style="padding:4px 8px">${t.check}</td>`;
+        html += `<td style="padding:4px 8px;font-weight:${t.triggered ? '700' : '400'}">${t.result}</td>`;
+        html += '</tr>';
+      }
+      html += '</table>';
+      traceEl.innerHTML = html;
+    } else {
+      traceEl.innerHTML = '<span style="color:var(--text-dim)">No weather data — cannot evaluate rules</span>';
+    }
+
+    // Weather score
+    const scoreEl = document.getElementById('debug-weather-score');
+    if (data.weather_score) {
+      const s = data.weather_score;
+      scoreEl.innerHTML = [
+        `Storm hours:      <span style="color:${s.storm_hours > 0 ? 'var(--red)' : 'var(--green)'}">${s.storm_hours}</span>`,
+        `Bad WMO hours:    <span style="color:${s.bad_hours > 0 ? 'var(--red)' : 'var(--green)'}">${s.bad_hours}</span>`,
+        `Max wind:         <span style="color:${s.max_wind >= 40 ? 'var(--red)' : s.max_wind >= 25 ? 'var(--yellow)' : 'var(--green)'}">${s.max_wind.toFixed(0)} mph</span>`,
+        `High wind hours:  <span style="color:${s.high_wind_hours > 0 ? 'var(--red)' : 'var(--green)'}">${s.high_wind_hours}</span>`,
+        `Avg cloud cover:  <span style="color:${s.avg_cloud >= 80 ? 'var(--red)' : s.avg_cloud >= 50 ? 'var(--yellow)' : 'var(--green)'}">${s.avg_cloud.toFixed(0)}%</span>`,
+        `Max precip prob:  <span style="color:${s.max_precip_prob >= 70 ? 'var(--red)' : s.max_precip_prob >= 40 ? 'var(--yellow)' : 'var(--green)'}">${s.max_precip_prob}%</span>`,
+        `Avg precip prob:  <span style="color:${s.avg_precip_prob >= 50 ? 'var(--yellow)' : 'var(--green)'}">${s.avg_precip_prob.toFixed(0)}%</span>`,
+        `Sunny hours:      <span style="color:${s.sunny_hours >= 3 ? 'var(--green)' : 'var(--yellow)'}">${s.sunny_hours}</span>`,
+        `Severe NWS alerts:<span style="color:${s.severe_alerts > 0 ? 'var(--red)' : 'var(--green)'}">${s.severe_alerts}</span>`,
+        `Window:           ${s.window_hours}h`,
+      ].join('\n');
+    } else {
+      scoreEl.textContent = 'No weather data available';
+    }
+
+    // NWS alerts
+    const alertsEl = document.getElementById('debug-nws-alerts');
+    if (data.nws_alerts && data.nws_alerts.length) {
+      let html = '';
+      for (const a of data.nws_alerts) {
+        const color = (a.severity === 'Extreme' || a.severity === 'Severe') ? 'var(--red)' : 'var(--yellow)';
+        html += `<div style="margin-bottom:8px;padding:6px;border-left:3px solid ${color}">`;
+        html += `<span style="color:${color};font-weight:700">${a.event}</span> (${a.severity} / ${a.urgency})\n`;
+        html += `${a.headline}\n`;
+        if (a.expires) html += `Expires: ${new Date(a.expires).toLocaleString()}`;
+        html += '</div>';
+      }
+      alertsEl.innerHTML = html;
+    } else {
+      alertsEl.innerHTML = '<span style="color:var(--green)">No active alerts</span>';
+    }
+
+    statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadRawWeather() {
+  const statusEl = document.getElementById('debug-weather-status');
+  statusEl.textContent = 'Loading...';
+  try {
+    const r = await fetch('/api/weather');
+    const data = await r.json();
+    const el = document.getElementById('debug-raw-weather');
+
+    if (!data.weather || !data.weather.hourly) {
+      el.textContent = 'No weather data cached';
+      statusEl.textContent = 'No data';
+      return;
+    }
+
+    const h = data.weather.hourly;
+    const now = new Date();
+    let curIdx = 0;
+    for (let i = 0; i < h.time.length; i++) {
+      if (new Date(h.time[i]) <= now) curIdx = i; else break;
+    }
+
+    // Show next 24h in table format
+    let lines = ['Hour             Temp  Cloud  Precip  Wind   WMO  Description'];
+    lines.push('─'.repeat(76));
+    const end = Math.min(curIdx + 24, h.time.length);
+    for (let i = curIdx; i < end; i++) {
+      const t = new Date(h.time[i]);
+      const hr = t.toLocaleString([], { month:'short', day:'numeric', hour:'numeric' });
+      const temp = (h.temperature_2m[i] ?? 0).toFixed(0).padStart(4);
+      const cloud = (h.cloud_cover[i] ?? 0).toString().padStart(4);
+      const precip = (h.precipitation_probability[i] ?? 0).toString().padStart(4);
+      const wind = (h.wind_speed_10m[i] ?? 0).toFixed(0).padStart(4);
+      const code = (h.weather_code[i] ?? 0).toString().padStart(4);
+      const marker = i === curIdx ? ' <<< NOW' : '';
+      lines.push(`${hr.padEnd(17)}${temp}°F ${cloud}%  ${precip}%   ${wind}mph  ${code}${marker}`);
+    }
+
+    if (data.last_fetch) {
+      lines.push('');
+      lines.push(`Last fetch: ${new Date(data.last_fetch * 1000).toLocaleString()}`);
+    }
+    if (data.location) {
+      lines.push(`Location: ${data.location.city}, ${data.location.state} (${data.location.lat}, ${data.location.lon})`);
+    }
+
+    el.textContent = lines.join('\n');
+    statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  }
 }
 
 // ============================================================

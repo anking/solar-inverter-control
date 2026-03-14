@@ -40,7 +40,9 @@ from config import (
     load_weather_location, save_weather_location,
     SMART_STORM_WMO_CODES, SMART_BAD_WMO_CODES,
     SMART_CLOUD_HEAVY_PCT, SMART_PRECIP_PROB_HIGH,
+    SMART_WIND_HIGH_MPH, SMART_WIND_MODERATE_MPH,
     SMART_SOC_DRAIN_OK, SMART_COOLDOWN_MINUTES, SMART_EVAL_INTERVAL,
+    NWS_ALERTS_REFRESH,
 )
 from inverter import InverterController
 from database import (
@@ -65,6 +67,10 @@ weather_location: dict = {}
 weather_cache: dict = {}
 weather_last_fetch: float = 0
 weather_task: asyncio.Task = None
+
+# NWS alerts state
+nws_alerts: list = []
+nws_alerts_last_fetch: float = 0
 
 # Smart mode state
 smart_enabled: bool = False
@@ -190,6 +196,7 @@ async def control_loop():
             status["smart_enabled"] = smart_enabled
             status["smart_effective"] = smart_effective_profile
             status["smart_reason"] = smart_reason
+            status["nws_alerts"] = nws_alerts
             latest_status = status
 
             # Log to database
@@ -380,13 +387,59 @@ async def _fetch_weather():
                 smart_reason = reason
 
 
+async def _fetch_nws_alerts():
+    """Fetch active weather alerts from the National Weather Service API."""
+    global nws_alerts, nws_alerts_last_fetch
+    global smart_effective_profile, smart_reason, smart_last_switch, active_auto_mode
+    lat = weather_location.get("lat")
+    lon = weather_location.get("lon")
+    if not lat or not lon:
+        return
+    url = f"https://api.weather.gov/alerts/active?point={lat},{lon}&status=actual"
+    data = await _http_get_json(url)
+    if data and "features" in data:
+        alerts = []
+        for f in data["features"]:
+            p = f.get("properties", {})
+            alerts.append({
+                "event": p.get("event", "Unknown"),
+                "severity": p.get("severity", "Unknown"),
+                "urgency": p.get("urgency", "Unknown"),
+                "headline": p.get("headline", ""),
+                "description": p.get("description", ""),
+                "instruction": p.get("instruction", ""),
+                "expires": p.get("expires", ""),
+            })
+        nws_alerts = alerts
+        nws_alerts_last_fetch = time.time()
+        if alerts:
+            logging.info(f"NWS alerts active: {', '.join(a['event'] for a in alerts)}")
+            # Re-evaluate smart mode when alerts arrive
+            if smart_enabled:
+                current_soc = latest_status.get("soc", 50) if latest_status else 50
+                new_profile, reason = evaluate_smart_mode(current_soc)
+                if new_profile != smart_effective_profile:
+                    old = smart_effective_profile
+                    smart_effective_profile = new_profile
+                    smart_reason = reason
+                    smart_last_switch = time.time()
+                    active_auto_mode = new_profile
+                    logging.info(f"[SMART] NWS alert triggered: {old} → {new_profile}: {reason}")
+                    await _broadcast_manual_update()
+    else:
+        nws_alerts = []
+        nws_alerts_last_fetch = time.time()
+
+
 async def weather_loop():
-    """Periodically refresh weather data."""
+    """Periodically refresh weather data and NWS alerts."""
     while True:
         if weather_location.get("lat"):
             now = time.time()
             if now - weather_last_fetch >= WEATHER_REFRESH_INTERVAL:
                 await _fetch_weather()
+            if now - nws_alerts_last_fetch >= NWS_ALERTS_REFRESH:
+                await _fetch_nws_alerts()
         await asyncio.sleep(60)
 
 
@@ -416,8 +469,10 @@ def _score_weather_window(hours_ahead=6):
     if not times:
         return None
 
+    wind_all = h.get("wind_speed_10m", [])
+
     # Use the minimum length across all arrays to avoid index errors
-    max_len = min(len(times), len(codes_all), len(clouds_all), len(precip_all))
+    max_len = min(len(times), len(codes_all), len(clouds_all), len(precip_all), len(wind_all)) if wind_all else min(len(times), len(codes_all), len(clouds_all), len(precip_all))
     if max_len == 0:
         return None
 
@@ -443,12 +498,15 @@ def _score_weather_window(hours_ahead=6):
     codes = [codes_all[i] for i in window]
     clouds = [clouds_all[i] for i in window]
     precip_probs = [precip_all[i] for i in window]
+    winds = [wind_all[i] for i in window] if wind_all else []
 
     storm_hours = sum(1 for c in codes if c in SMART_STORM_WMO_CODES)
     bad_hours = sum(1 for c in codes if c in SMART_BAD_WMO_CODES)
     avg_cloud = sum(clouds) / len(clouds) if clouds else 50
     max_precip_prob = max(precip_probs) if precip_probs else 0
     avg_precip_prob = sum(precip_probs) / len(precip_probs) if precip_probs else 0
+    max_wind = max(winds) if winds else 0
+    high_wind_hours = sum(1 for w in winds if w >= SMART_WIND_HIGH_MPH) if winds else 0
 
     # Count upcoming sunny hours (low cloud, during daylight)
     sun_rise, sun_set = _get_sunrise_sunset_hours()
@@ -458,14 +516,20 @@ def _score_weather_window(hours_ahead=6):
         if sun_rise <= hr < sun_set and clouds[j] < 40:
             sunny_hours += 1
 
+    # NWS severe alerts
+    severe_alerts = [a for a in nws_alerts if a["severity"] in ("Extreme", "Severe")]
+
     return {
         "storm_hours": storm_hours,
         "bad_hours": bad_hours,
         "avg_cloud": avg_cloud,
         "max_precip_prob": max_precip_prob,
         "avg_precip_prob": avg_precip_prob,
+        "max_wind": max_wind,
+        "high_wind_hours": high_wind_hours,
         "sunny_hours": sunny_hours,
         "window_hours": len(list(window)),
+        "severe_alerts": len(severe_alerts),
     }
 
 
@@ -483,19 +547,32 @@ def evaluate_smart_mode(current_soc: int) -> tuple:
     is_daytime = sun_rise <= now.hour < sun_set
     hours_of_sun_left = max(0, sun_set - now.hour) if is_daytime else 0
 
+    # === PRIORITY 0: Active NWS severe/extreme alert → pure_backup ===
+    if score["severe_alerts"] > 0:
+        alert_names = ", ".join(a["event"] for a in nws_alerts if a["severity"] in ("Extreme", "Severe"))
+        return "pure_backup", f"NWS ALERT: {alert_names}"
+
     # === PRIORITY 1: Severe storm incoming → pure_backup ===
     if score["storm_hours"] >= 1:
         return "pure_backup", f"Storm warning: {score['storm_hours']}h of thunderstorms in next 6h"
 
-    # === PRIORITY 2: Bad weather + high precip → pure_backup ===
+    # === PRIORITY 2: High winds → pure_backup (outage risk) ===
+    if score["high_wind_hours"] >= 1:
+        return "pure_backup", f"High wind warning: {score['max_wind']:.0f} mph gusts, {score['high_wind_hours']}h of dangerous winds"
+
+    # === PRIORITY 3: Bad weather + high precip → pure_backup ===
     if score["bad_hours"] >= 2 and score["max_precip_prob"] >= SMART_PRECIP_PROB_HIGH:
         return "pure_backup", f"Severe weather: {score['bad_hours']}h of heavy precip, {score['max_precip_prob']}% probability"
 
-    # === PRIORITY 3: Sustained heavy cloud + precip likely → balanced (conservative) ===
+    # === PRIORITY 4: Moderate winds + precipitation → balanced (conservative) ===
+    if score["max_wind"] >= SMART_WIND_MODERATE_MPH and score["avg_precip_prob"] >= 40:
+        return "balanced", f"Windy with rain likely ({score['max_wind']:.0f} mph, precip {score['avg_precip_prob']:.0f}%)"
+
+    # === PRIORITY 5: Sustained heavy cloud + precip likely → balanced (conservative) ===
     if score["avg_cloud"] >= SMART_CLOUD_HEAVY_PCT and score["avg_precip_prob"] >= 50:
         return "balanced", f"Overcast with rain likely (cloud {score['avg_cloud']:.0f}%, precip {score['avg_precip_prob']:.0f}%)"
 
-    # === PRIORITY 4: Good solar conditions → max_solar (drain battery to harvest) ===
+    # === PRIORITY 6: Good solar conditions → max_solar (drain battery to harvest) ===
     if (is_daytime
             and score["sunny_hours"] >= 3
             and hours_of_sun_left >= 4
@@ -662,6 +739,7 @@ async def _broadcast_manual_update():
         latest_status["smart_enabled"] = smart_enabled
         latest_status["smart_effective"] = smart_effective_profile
         latest_status["smart_reason"] = smart_reason
+        latest_status["nws_alerts"] = nws_alerts
         await broadcast_status(latest_status)
 
 
@@ -813,6 +891,66 @@ async def reset_auto_mode(request: Request):
 async def api_smart():
     current_soc = latest_status.get("soc", 50) if latest_status else 50
     score = _score_weather_window(6)
+
+    # Build decision trace showing how each rule evaluated
+    trace = []
+    if score:
+        severe = [a for a in nws_alerts if a["severity"] in ("Extreme", "Severe")]
+        trace.append({
+            "rule": "P0: NWS Severe/Extreme Alert",
+            "check": f"{len(severe)} active severe alerts",
+            "triggered": len(severe) > 0,
+            "result": "pure_backup" if len(severe) > 0 else "skip",
+        })
+        trace.append({
+            "rule": "P1: Thunderstorms (WMO 95/96/99)",
+            "check": f"{score['storm_hours']}h of storms in next 6h (need >= 1)",
+            "triggered": score["storm_hours"] >= 1,
+            "result": "pure_backup" if score["storm_hours"] >= 1 else "skip",
+        })
+        trace.append({
+            "rule": f"P2: High Wind >= {SMART_WIND_HIGH_MPH} mph",
+            "check": f"max {score['max_wind']:.0f} mph, {score['high_wind_hours']}h dangerous (need >= 1)",
+            "triggered": score["high_wind_hours"] >= 1,
+            "result": "pure_backup" if score["high_wind_hours"] >= 1 else "skip",
+        })
+        trace.append({
+            "rule": f"P3: Bad Weather + Precip >= {SMART_PRECIP_PROB_HIGH}%",
+            "check": f"{score['bad_hours']}h bad WMO (need >= 2), max precip {score['max_precip_prob']}% (need >= {SMART_PRECIP_PROB_HIGH})",
+            "triggered": score["bad_hours"] >= 2 and score["max_precip_prob"] >= SMART_PRECIP_PROB_HIGH,
+            "result": "pure_backup" if (score["bad_hours"] >= 2 and score["max_precip_prob"] >= SMART_PRECIP_PROB_HIGH) else "skip",
+        })
+        trace.append({
+            "rule": f"P4: Moderate Wind >= {SMART_WIND_MODERATE_MPH} mph + Rain",
+            "check": f"max wind {score['max_wind']:.0f} mph, avg precip {score['avg_precip_prob']:.0f}% (need >= 40)",
+            "triggered": score["max_wind"] >= SMART_WIND_MODERATE_MPH and score["avg_precip_prob"] >= 40,
+            "result": "balanced" if (score["max_wind"] >= SMART_WIND_MODERATE_MPH and score["avg_precip_prob"] >= 40) else "skip",
+        })
+        trace.append({
+            "rule": f"P5: Overcast (cloud >= {SMART_CLOUD_HEAVY_PCT}%) + Rain (>= 50%)",
+            "check": f"avg cloud {score['avg_cloud']:.0f}%, avg precip {score['avg_precip_prob']:.0f}%",
+            "triggered": score["avg_cloud"] >= SMART_CLOUD_HEAVY_PCT and score["avg_precip_prob"] >= 50,
+            "result": "balanced" if (score["avg_cloud"] >= SMART_CLOUD_HEAVY_PCT and score["avg_precip_prob"] >= 50) else "skip",
+        })
+        now = datetime.now()
+        sun_rise, sun_set = _get_sunrise_sunset_hours()
+        is_daytime = sun_rise <= now.hour < sun_set
+        hours_left = max(0, sun_set - now.hour) if is_daytime else 0
+        solar_ok = (is_daytime and score["sunny_hours"] >= 3 and hours_left >= 4
+                     and current_soc >= SMART_SOC_DRAIN_OK and score["avg_cloud"] < 40)
+        trace.append({
+            "rule": "P6: Good Solar Conditions",
+            "check": f"daytime={is_daytime}, {score['sunny_hours']}h sun (need >= 3), {hours_left}h left (need >= 4), SOC {current_soc}% (need >= {SMART_SOC_DRAIN_OK}), cloud {score['avg_cloud']:.0f}% (need < 40)",
+            "triggered": solar_ok,
+            "result": "max_solar" if solar_ok else "skip",
+        })
+        trace.append({
+            "rule": "Default",
+            "check": "No higher priority rule triggered",
+            "triggered": not any(t["triggered"] for t in trace),
+            "result": "balanced",
+        })
+
     return JSONResponse({
         "enabled": smart_enabled,
         "effective_profile": smart_effective_profile,
@@ -820,6 +958,8 @@ async def api_smart():
         "last_switch": smart_last_switch,
         "weather_score": score,
         "current_soc": current_soc,
+        "nws_alerts": nws_alerts,
+        "decision_trace": trace,
     })
 
 
@@ -832,7 +972,13 @@ async def api_weather():
         "location": weather_location,
         "weather": weather_cache,
         "last_fetch": weather_last_fetch,
+        "alerts": nws_alerts,
     })
+
+
+@app.get("/api/alerts")
+async def api_alerts():
+    return JSONResponse({"alerts": nws_alerts, "last_fetch": nws_alerts_last_fetch})
 
 
 @app.post("/api/weather/location")
