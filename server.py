@@ -25,6 +25,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
+import urllib.request
+import urllib.error
+
 from config import (
     SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS,
     POLL_INTERVAL,
@@ -33,6 +36,8 @@ from config import (
     CHARGE_SNU, CHARGE_OSO,
     MODE_NAMES, CHARGE_NAMES,
     MODES_DEFAULTS, load_auto_modes, save_auto_modes,
+    WEATHER_REFRESH_INTERVAL,
+    load_weather_location, save_weather_location,
 )
 from inverter import InverterController
 from database import (
@@ -53,6 +58,10 @@ control_task: asyncio.Task = None
 log_event_loop: asyncio.AbstractEventLoop = None
 auto_modes: dict = {}
 active_auto_mode: str = "balanced"
+weather_location: dict = {}
+weather_cache: dict = {}
+weather_last_fetch: float = 0
+weather_task: asyncio.Task = None
 
 
 # =============================================================================
@@ -302,12 +311,65 @@ async def broadcast_status(status):
 
 
 # =============================================================================
+# WEATHER — Open-Meteo (free, no key) + Zippopotam.us for geocoding
+# =============================================================================
+
+async def _http_get_json(url: str):
+    """Non-blocking HTTP GET returning parsed JSON, or None on error."""
+    try:
+        def _fetch():
+            req = urllib.request.Request(url, headers={"User-Agent": "SolarDashboard/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        logging.warning(f"HTTP fetch failed ({url[:80]}): {e}")
+        return None
+
+
+async def _fetch_weather():
+    """Fetch hourly forecast from Open-Meteo and cache it."""
+    global weather_cache, weather_last_fetch
+    lat = weather_location.get("lat")
+    lon = weather_location.get("lon")
+    if not lat or not lon:
+        return
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m,relative_humidity_2m,cloud_cover,"
+        f"precipitation_probability,precipitation,weather_code,wind_speed_10m"
+        f"&temperature_unit=fahrenheit"
+        f"&wind_speed_unit=mph"
+        f"&precipitation_unit=inch"
+        f"&timezone=auto"
+        f"&forecast_days=2"
+    )
+    data = await _http_get_json(url)
+    if data and "hourly" in data:
+        weather_cache = data
+        weather_last_fetch = time.time()
+        logging.info(f"Weather updated for {weather_location.get('city', '?')}, {weather_location.get('state', '?')}")
+
+
+async def weather_loop():
+    """Periodically refresh weather data."""
+    while True:
+        if weather_location.get("lat"):
+            now = time.time()
+            if now - weather_last_fetch >= WEATHER_REFRESH_INTERVAL:
+                await _fetch_weather()
+        await asyncio.sleep(60)
+
+
+# =============================================================================
 # FASTAPI APP
 # =============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global controller, control_task, log_event_loop, auto_modes, active_auto_mode
+    global weather_location, weather_task
 
     setup_logging()
     log_event_loop = asyncio.get_running_loop()
@@ -315,6 +377,9 @@ async def lifespan(app: FastAPI):
 
     auto_modes = load_auto_modes()
     active_auto_mode = auto_modes.get("active_mode", "balanced")
+
+    weather_location = load_weather_location()
+    weather_task = asyncio.create_task(weather_loop())
 
     controller = InverterController(SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS)
     connected = controller.connect()
@@ -327,12 +392,13 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if control_task:
-        control_task.cancel()
-        try:
-            await control_task
-        except asyncio.CancelledError:
-            pass
+    for task in [control_task, weather_task]:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     if controller:
         controller.disconnect()
 
@@ -508,6 +574,47 @@ async def reset_auto_mode(request: Request):
     logging.info(f"Auto mode '{mode}' reset to defaults")
     await _broadcast_manual_update()
     return JSONResponse({"mode": mode, "thresholds": auto_modes["modes"][mode]})
+
+
+# --- Weather ---
+
+@app.get("/api/weather")
+async def api_weather():
+    if not weather_location.get("lat"):
+        return JSONResponse({"configured": False})
+    return JSONResponse({
+        "configured": True,
+        "location": weather_location,
+        "weather": weather_cache,
+        "last_fetch": weather_last_fetch,
+    })
+
+
+@app.post("/api/weather/location")
+async def set_weather_location_endpoint(request: Request):
+    global weather_location, weather_last_fetch
+    body = await request.json()
+    zip_code = body.get("zip_code", "").strip()
+    if not (zip_code.isdigit() and len(zip_code) == 5):
+        return JSONResponse({"error": "Enter a valid 5-digit US zip code"}, status_code=400)
+
+    geo = await _http_get_json(f"https://api.zippopotam.us/us/{zip_code}")
+    if not geo or "places" not in geo or not geo["places"]:
+        return JSONResponse({"error": "Zip code not found"}, status_code=404)
+
+    place = geo["places"][0]
+    weather_location = {
+        "zip_code": zip_code,
+        "lat": float(place["latitude"]),
+        "lon": float(place["longitude"]),
+        "city": place["place name"],
+        "state": place["state abbreviation"],
+    }
+    await asyncio.to_thread(save_weather_location, weather_location)
+    weather_last_fetch = 0
+    await _fetch_weather()
+    logging.info(f"Weather location set: {weather_location['city']}, {weather_location['state']} ({zip_code})")
+    return JSONResponse(weather_location)
 
 
 # --- WebSocket ---

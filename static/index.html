@@ -399,6 +399,39 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* =========== WEATHER CARD =========== */
+  .weather-current {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 10px;
+  }
+  .weather-icon-lg { font-size: 40px; line-height: 1; }
+  .weather-temp-lg { font-size: 28px; font-weight: 700; }
+  .weather-cond { font-size: 13px; color: var(--text-dim); }
+  .weather-stats {
+    display: flex; gap: 14px; margin-left: auto; font-size: 12px; color: var(--text-dim);
+  }
+  .weather-stats span { white-space: nowrap; }
+  .weather-hourly {
+    display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px;
+    scrollbar-width: thin; scrollbar-color: var(--surface2) transparent;
+  }
+  .weather-hour {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 44px; padding: 6px 4px; border-radius: 6px;
+    font-size: 10px; color: var(--text-dim);
+  }
+  .weather-hour.now { background: rgba(56,189,248,0.12); color: var(--text); }
+  .weather-hour .wh-icon { font-size: 16px; }
+  .weather-hour .wh-temp { font-size: 12px; font-weight: 600; color: var(--text); }
+  .weather-hour .wh-cloud {
+    width: 24px; height: 4px; border-radius: 2px; background: var(--surface2);
+    overflow: hidden;
+  }
+  .weather-hour .wh-cloud-fill { height: 100%; border-radius: 2px; }
+  .weather-zip-input {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid var(--surface2);
+    background: var(--surface2); color: var(--text); font-size: 14px; width: 120px;
+  }
+
   /* =========== CHARTS =========== */
   .chart-card { margin-bottom: 16px; }
   .chart-container { position: relative; height: 220px; }
@@ -692,6 +725,30 @@
       <div class="metric">
         <span class="metric-label">Load</span>
         <span><span class="metric-value" id="det-load-i">--</span><span class="metric-unit">A</span> / <span class="metric-value" id="det-load-w">--</span><span class="metric-unit">W</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============== WEATHER FORECAST =============== -->
+  <div class="card" id="weather-card" style="margin-bottom:16px">
+    <div class="card-title">Weather Forecast</div>
+    <div id="weather-setup" style="display:none">
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:10px">
+        Enter your zip code to see local weather and solar production forecast.
+      </p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="weather-zip" class="weather-zip-input" placeholder="Zip code"
+               maxlength="5" inputmode="numeric" pattern="[0-9]*">
+        <button class="btn" onclick="setWeatherZip()">Set Location</button>
+      </div>
+      <div id="weather-zip-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+    </div>
+    <div id="weather-content" style="display:none">
+      <div class="weather-current" id="weather-current"></div>
+      <div class="weather-hourly" id="weather-hourly"></div>
+      <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+        <span id="weather-location-label" style="font-size:11px;color:var(--text-dim)"></span>
+        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="changeWeatherZip()">Change</button>
       </div>
     </div>
   </div>
@@ -1553,6 +1610,155 @@ function clearDebugLog() {
 }
 
 // ============================================================
+// Weather
+// ============================================================
+const WMO_CODES = {
+  0: ['☀️','Clear sky'],
+  1: ['🌤️','Mainly clear'], 2: ['⛅','Partly cloudy'], 3: ['☁️','Overcast'],
+  45: ['🌫️','Fog'], 48: ['🌫️','Rime fog'],
+  51: ['🌦️','Light drizzle'], 53: ['🌦️','Drizzle'], 55: ['🌧️','Heavy drizzle'],
+  56: ['🌧️','Freezing drizzle'], 57: ['🌧️','Heavy freezing drizzle'],
+  61: ['🌧️','Light rain'], 63: ['🌧️','Rain'], 65: ['🌧️','Heavy rain'],
+  66: ['🌧️','Freezing rain'], 67: ['🌧️','Heavy freezing rain'],
+  71: ['🌨️','Light snow'], 73: ['🌨️','Snow'], 75: ['❄️','Heavy snow'],
+  77: ['🌨️','Snow grains'],
+  80: ['🌦️','Light showers'], 81: ['🌧️','Showers'], 82: ['🌧️','Heavy showers'],
+  85: ['🌨️','Snow showers'], 86: ['❄️','Heavy snow showers'],
+  95: ['⛈️','Thunderstorm'],
+  96: ['⛈️','Thunderstorm + hail'], 99: ['⛈️','Thunderstorm + heavy hail'],
+};
+
+function wmoLookup(code) {
+  return WMO_CODES[code] || ['❓','Unknown'];
+}
+
+function cloudBar(pct) {
+  const color = pct > 80 ? 'var(--text-dim)' : pct > 50 ? '#94a3b8' : '#38bdf8';
+  return `<div class="wh-cloud"><div class="wh-cloud-fill" style="width:${pct}%;background:${color}"></div></div>`;
+}
+
+async function loadWeather() {
+  let data;
+  try {
+    const r = await fetch('/api/weather');
+    data = await r.json();
+  } catch { return; }
+
+  if (!data.location || !data.location.lat) {
+    document.getElementById('weather-setup').style.display = '';
+    document.getElementById('weather-content').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('weather-setup').style.display = 'none';
+  document.getElementById('weather-content').style.display = '';
+
+  const loc = data.location;
+  document.getElementById('weather-location-label').textContent =
+    loc.city && loc.state ? `${loc.city}, ${loc.state} (${loc.zip_code})` : loc.zip_code;
+
+  if (data.weather && data.weather.hourly) {
+    renderWeather(data.weather);
+  }
+}
+
+function renderWeather(data) {
+  const h = data.hourly;
+  const times = h.time;  // ISO strings
+  const now = new Date();
+
+  // Find current hour index
+  let curIdx = 0;
+  for (let i = 0; i < times.length; i++) {
+    if (new Date(times[i]) <= now) curIdx = i;
+    else break;
+  }
+
+  // Current conditions
+  const [icon, desc] = wmoLookup(h.weather_code[curIdx]);
+  const temp = Math.round(h.temperature_2m[curIdx]);
+  const cloud = h.cloud_cover[curIdx];
+  const humid = h.relative_humidity_2m[curIdx];
+  const wind = Math.round(h.wind_speed_10m[curIdx]);
+  const precip = h.precipitation_probability[curIdx];
+
+  document.getElementById('weather-current').innerHTML =
+    `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+       <span class="weather-icon-lg">${icon}</span>
+       <div>
+         <span class="weather-temp-lg">${temp}°F</span>
+         <div class="weather-cond">${desc}</div>
+       </div>
+     </div>
+     <div class="weather-stats">
+       <span>☁️ ${cloud}%</span>
+       <span>💧 ${humid}%</span>
+       <span>🌬️ ${wind} mph</span>
+       <span>🌧️ ${precip}%</span>
+     </div>`;
+
+  // Hourly strip: next 24 hours
+  let html = '';
+  const end = Math.min(curIdx + 24, times.length);
+  for (let i = curIdx; i < end; i++) {
+    const d = new Date(times[i]);
+    const hr = d.getHours();
+    const label = hr === 0 ? '12a' : hr < 12 ? hr + 'a' : hr === 12 ? '12p' : (hr - 12) + 'p';
+    const [hIcon] = wmoLookup(h.weather_code[i]);
+    const hTemp = Math.round(h.temperature_2m[i]);
+    const hCloud = h.cloud_cover[i];
+    const cls = i === curIdx ? 'weather-hour now' : 'weather-hour';
+    html += `<div class="${cls}">
+      <div style="font-size:11px">${label}</div>
+      <div class="wh-icon">${hIcon}</div>
+      <div class="wh-temp">${hTemp}°</div>
+      ${cloudBar(hCloud)}
+    </div>`;
+  }
+  document.getElementById('weather-hourly').innerHTML = html;
+}
+
+async function setWeatherZip() {
+  const input = document.getElementById('weather-zip');
+  const errEl = document.getElementById('weather-zip-error');
+  const zip = input.value.trim();
+  errEl.style.display = 'none';
+
+  if (!/^\d{5}$/.test(zip)) {
+    errEl.textContent = 'Please enter a valid 5-digit zip code.';
+    errEl.style.display = '';
+    return;
+  }
+
+  await withLoading('weather-card', async () => {
+    try {
+      const r = await fetch('/api/weather/location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zip_code: zip }),
+      });
+      const data = await r.json();
+      if (data.error) {
+        errEl.textContent = data.error;
+        errEl.style.display = '';
+        return;
+      }
+      await loadWeather();
+    } catch (e) {
+      errEl.textContent = 'Network error. Try again.';
+      errEl.style.display = '';
+    }
+  });
+}
+
+function changeWeatherZip() {
+  document.getElementById('weather-setup').style.display = '';
+  document.getElementById('weather-content').style.display = 'none';
+  document.getElementById('weather-zip').value = '';
+  document.getElementById('weather-zip-error').style.display = 'none';
+}
+
+// ============================================================
 // Clock + Init
 // ============================================================
 function updateClock() {
@@ -1576,6 +1782,8 @@ setInterval(() => {
   loadHistory(map[tab?.textContent] || 6);
 }, 60000);
 setInterval(loadDaily, 300000);
+loadWeather();
+setInterval(loadWeather, 300000);
 </script>
 </body>
 </html>

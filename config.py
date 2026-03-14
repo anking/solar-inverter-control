@@ -140,3 +140,40 @@ def save_auto_modes(data):
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, MODES_FILE)
+
+
+# =============================================================================
+# WEATHER
+# =============================================================================
+
+WEATHER_FILE = os.environ.get(
+    "SOLAR_WEATHER_FILE",
+    os.path.join(os.path.dirname(DB_PATH), "weather_location.json"),
+)
+
+WEATHER_REFRESH_INTERVAL = int(os.environ.get("SOLAR_WEATHER_REFRESH", "1800"))
+
+WEATHER_DEFAULTS = {
+    "zip_code": "",
+    "lat": None,
+    "lon": None,
+    "city": "",
+    "state": "",
+}
+
+
+def load_weather_location():
+    """Load weather location from JSON file, falling back to defaults."""
+    try:
+        with open(WEATHER_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(WEATHER_DEFAULTS)
+
+
+def save_weather_location(data):
+    """Save weather location to JSON file atomically."""
+    tmp = WEATHER_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, WEATHER_FILE)
