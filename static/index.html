@@ -307,6 +307,11 @@
   }
   .auto-mode-btn:hover { background: #3d3d5c; }
   .auto-mode-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .auto-mode-btn.config-browse.browsing { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+  .auto-mode-btn.config-browse.browsing.active { background: var(--accent); color: #000; }
+  .btn-activate { background: var(--green) !important; color: #000 !important; border-color: var(--green) !important; font-weight: 600; }
+  .btn-activate:hover { filter: brightness(1.1); }
+  .btn-activate.hidden { display: none; }
 
   .threshold-bar-wrap {
     margin: 12px 0 6px;
@@ -685,10 +690,22 @@
     <div id="auto-modes-section" style="display:none">
       <div class="auto-mode-row">
         <span class="control-label">Auto Profile</span>
-        <button class="auto-mode-btn" data-mode="balanced" onclick="setAutoProfile('balanced')">Balanced</button>
-        <button class="auto-mode-btn" data-mode="max_solar" onclick="setAutoProfile('max_solar')">Max Solar</button>
-        <button class="auto-mode-btn" data-mode="pure_backup" onclick="setAutoProfile('pure_backup')">Pure Backup</button>
-        <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
+        <span class="has-hint">
+          <button class="auto-mode-btn" data-mode="balanced" onclick="setAutoProfile('balanced')">Balanced</button>
+          <span class="hint" id="hint-balanced"></span>
+        </span>
+        <span class="has-hint">
+          <button class="auto-mode-btn" data-mode="max_solar" onclick="setAutoProfile('max_solar')">Max Solar</button>
+          <span class="hint" id="hint-max_solar"></span>
+        </span>
+        <span class="has-hint">
+          <button class="auto-mode-btn" data-mode="pure_backup" onclick="setAutoProfile('pure_backup')">Pure Backup</button>
+          <span class="hint" id="hint-pure_backup"></span>
+        </span>
+        <span class="has-hint">
+          <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
+          <span class="hint" id="hint-custom"></span>
+        </span>
       </div>
     </div>
     <div class="control-row">
@@ -755,10 +772,10 @@
 
     <div class="auto-mode-row">
       <span class="control-label">Profile</span>
-      <button class="auto-mode-btn" data-mode="balanced" onclick="setAutoProfile('balanced')">Balanced</button>
-      <button class="auto-mode-btn" data-mode="max_solar" onclick="setAutoProfile('max_solar')">Max Solar</button>
-      <button class="auto-mode-btn" data-mode="pure_backup" onclick="setAutoProfile('pure_backup')">Pure Backup</button>
-      <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
+      <button class="auto-mode-btn config-browse" data-mode="balanced" onclick="browseAutoProfile('balanced')">Balanced</button>
+      <button class="auto-mode-btn config-browse" data-mode="max_solar" onclick="browseAutoProfile('max_solar')">Max Solar</button>
+      <button class="auto-mode-btn config-browse" data-mode="pure_backup" onclick="browseAutoProfile('pure_backup')">Pure Backup</button>
+      <button class="auto-mode-btn config-browse" data-mode="custom" onclick="browseAutoProfile('custom')">Custom</button>
     </div>
 
     <div class="threshold-bar-wrap">
@@ -788,6 +805,7 @@
     <div class="threshold-actions">
       <button class="btn btn-reset" onclick="resetAutoProfile()">Reset to Default</button>
       <button class="btn btn-save" onclick="saveAutoProfile()">Save</button>
+      <button class="btn btn-activate" id="btn-activate-profile" onclick="activateBrowsedProfile()">Activate</button>
     </div>
   </div>
 
@@ -1040,7 +1058,11 @@ function updateControlButtons(d) {
   });
 
   // Auto mode profiles
-  if (d?.active_auto_mode) currentAutoMode = d.active_auto_mode;
+  if (d?.active_auto_mode) {
+    // If browsed mode was tracking the old active, follow the change
+    if (browsedMode === currentAutoMode && !sliderDirty) browsedMode = d.active_auto_mode;
+    currentAutoMode = d.active_auto_mode;
+  }
   if (d?.auto_modes) autoModesData = d.auto_modes;
   updateAutoModesUI();
 }
@@ -1090,27 +1112,44 @@ document.addEventListener('click', function(e) {
 // ============================================================
 // Auto Mode Profiles + Threshold Slider
 // ============================================================
-let currentAutoMode = 'balanced';
-let autoModesData = null;   // cached from server
+let currentAutoMode = 'balanced';  // the server's active mode
+let browsedMode = 'balanced';       // what config page is showing
+let autoModesData = null;           // cached from server
 let sliderValues = { low: 82, charge: 85, high: 92 };
-let sliderDirty = false;    // true if user dragged but hasn't saved
+let sliderDirty = false;            // true if user dragged but hasn't saved
 
 function updateAutoModesUI() {
-  // Highlight active profile button (both on dashboard and config page)
-  document.querySelectorAll('.auto-mode-btn').forEach(btn => {
+  // Dashboard buttons: highlight the server's active mode
+  document.querySelectorAll('#auto-modes-section .auto-mode-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === currentAutoMode);
   });
+
+  // Config page buttons: highlight browsed mode, mark active one too
+  document.querySelectorAll('.auto-mode-btn.config-browse').forEach(btn => {
+    const isBrowsed = btn.dataset.mode === browsedMode;
+    const isActive = btn.dataset.mode === currentAutoMode;
+    btn.classList.toggle('browsing', isBrowsed);
+    btn.classList.toggle('active', isBrowsed && isActive);
+  });
+
+  // Show/hide activate button (hide if browsed == active)
+  const activateBtn = document.getElementById('btn-activate-profile');
+  if (activateBtn) {
+    activateBtn.classList.toggle('hidden', browsedMode === currentAutoMode);
+  }
 
   // Show/hide profile selector on dashboard based on manual mode
   const section = document.getElementById('auto-modes-section');
   if (section) section.style.display = isManual ? 'none' : 'block';
 
-  if (autoModesData && autoModesData[currentAutoMode]) {
+  // Update sliders to show browsed mode's values
+  if (autoModesData && autoModesData[browsedMode]) {
     if (!sliderDirty) {
-      sliderValues = { ...autoModesData[currentAutoMode] };
+      sliderValues = { ...autoModesData[browsedMode] };
     }
   }
   renderSlider();
+  updateDashboardTooltips();
 }
 
 function renderSlider() {
@@ -1141,6 +1180,16 @@ function renderSlider() {
   document.getElementById('desc-low').textContent = low;
   document.getElementById('desc-charge').textContent = charge;
   document.getElementById('desc-high').textContent = high;
+}
+
+function updateDashboardTooltips() {
+  const modes = ['balanced', 'max_solar', 'pure_backup', 'custom'];
+  modes.forEach(mode => {
+    const el = document.getElementById('hint-' + mode);
+    if (!el || !autoModesData || !autoModesData[mode]) return;
+    const m = autoModesData[mode];
+    el.innerHTML = `<b>Grid Charge</b> below ${m.low}% &rarr; <b>Top off</b> to ${m.charge}% &rarr; <b>Use Battery</b> above ${m.high}%`;
+  });
 }
 
 // Dragging logic for threshold slider
@@ -1201,6 +1250,7 @@ function initSliderDrag() {
   document.addEventListener('touchend', endDrag);
 }
 
+// Dashboard: switch active mode on server immediately
 async function setAutoProfile(mode) {
   sliderDirty = false;
   try {
@@ -1212,6 +1262,7 @@ async function setAutoProfile(mode) {
     const data = await resp.json();
     if (data.active_mode) {
       currentAutoMode = data.active_mode;
+      browsedMode = data.active_mode;
       if (data.thresholds) {
         if (!autoModesData) autoModesData = {};
         autoModesData[mode] = data.thresholds;
@@ -1222,18 +1273,34 @@ async function setAutoProfile(mode) {
   } catch (e) { console.error('Failed to set auto profile:', e); }
 }
 
+// Config page: browse a profile (view its sliders) without activating
+function browseAutoProfile(mode) {
+  sliderDirty = false;
+  browsedMode = mode;
+  if (autoModesData && autoModesData[mode]) {
+    sliderValues = { ...autoModesData[mode] };
+  }
+  updateAutoModesUI();
+}
+
+// Config page: activate the currently browsed profile on the server
+async function activateBrowsedProfile() {
+  await setAutoProfile(browsedMode);
+}
+
 async function saveAutoProfile() {
   try {
     const resp = await fetch('/api/auto-modes/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: currentAutoMode, ...sliderValues })
+      body: JSON.stringify({ mode: browsedMode, ...sliderValues })
     });
     const data = await resp.json();
     if (data.thresholds) {
       if (!autoModesData) autoModesData = {};
-      autoModesData[currentAutoMode] = data.thresholds;
+      autoModesData[browsedMode] = data.thresholds;
       sliderDirty = false;
+      updateDashboardTooltips();
     }
   } catch (e) { console.error('Failed to save profile:', e); }
 }
@@ -1243,15 +1310,16 @@ async function resetAutoProfile() {
     const resp = await fetch('/api/auto-modes/reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: currentAutoMode })
+      body: JSON.stringify({ mode: browsedMode })
     });
     const data = await resp.json();
     if (data.thresholds) {
       if (!autoModesData) autoModesData = {};
-      autoModesData[currentAutoMode] = data.thresholds;
+      autoModesData[browsedMode] = data.thresholds;
       sliderValues = { ...data.thresholds };
       sliderDirty = false;
       renderSlider();
+      updateDashboardTooltips();
     }
   } catch (e) { console.error('Failed to reset profile:', e); }
 }
