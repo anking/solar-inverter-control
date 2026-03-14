@@ -313,6 +313,25 @@
   .btn-activate:hover { filter: brightness(1.1); }
   .btn-activate.hidden { display: none; }
 
+  /* Smart mode */
+  .smart-btn { border-color: #a78bfa; color: #a78bfa; }
+  .smart-btn:hover { background: rgba(167,139,250,0.15); }
+  .smart-btn.active { background: #a78bfa; color: #000; border-color: #a78bfa; }
+  .smart-btn.config-browse.browsing { border-color: #a78bfa; color: #a78bfa; }
+  .smart-btn.config-browse.browsing.active { background: #a78bfa; color: #000; }
+  .smart-indicator {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 10px; margin: 6px 0 10px;
+    background: rgba(167,139,250,0.08); border-radius: 8px;
+    border: 1px solid rgba(167,139,250,0.2);
+    font-size: 12px;
+  }
+  .smart-badge {
+    background: #a78bfa; color: #000; font-weight: 700; font-size: 10px;
+    padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;
+  }
+  .smart-reason { color: var(--text-dim); font-style: italic; }
+
   .threshold-bar-wrap {
     margin: 12px 0 6px;
     padding: 0 4px;
@@ -781,6 +800,15 @@
           <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
           <span class="hint" id="hint-custom"></span>
         </span>
+        <span class="has-hint">
+          <button class="auto-mode-btn smart-btn" data-mode="smart" onclick="setAutoProfile('smart')">Smart</button>
+          <span class="hint" id="hint-smart">Weather-based automatic profile switching</span>
+        </span>
+      </div>
+      <div id="smart-indicator" class="smart-indicator" style="display:none">
+        <span class="smart-badge">SMART</span>
+        <span id="smart-effective-label"></span>
+        <span id="smart-reason-label" class="smart-reason"></span>
       </div>
     </div>
     <div class="control-row">
@@ -851,36 +879,63 @@
       <button class="auto-mode-btn config-browse" data-mode="max_solar" onclick="browseAutoProfile('max_solar')">Max Solar</button>
       <button class="auto-mode-btn config-browse" data-mode="pure_backup" onclick="browseAutoProfile('pure_backup')">Pure Backup</button>
       <button class="auto-mode-btn config-browse" data-mode="custom" onclick="browseAutoProfile('custom')">Custom</button>
+      <button class="auto-mode-btn smart-btn config-browse" data-mode="smart" onclick="browseAutoProfile('smart')">Smart</button>
     </div>
 
-    <div class="threshold-bar-wrap">
-      <div class="threshold-bar-labels"><span>0%</span><span>SOC Thresholds</span><span>100%</span></div>
-      <div class="threshold-bar" id="threshold-bar">
-        <div class="threshold-zone zone-charge" id="zone-charge"></div>
-        <div class="threshold-zone zone-hysteresis" id="zone-hysteresis"></div>
-        <div class="threshold-zone zone-normal" id="zone-normal"></div>
-        <div class="threshold-zone zone-battery" id="zone-battery"></div>
-        <div class="threshold-thumb thumb-low" id="thumb-low" data-key="low"></div>
-        <div class="threshold-thumb thumb-charge" id="thumb-charge" data-key="charge"></div>
-        <div class="threshold-thumb thumb-high" id="thumb-high" data-key="high"></div>
+    <!-- Smart mode config info (shown when browsing smart) -->
+    <div id="smart-config-info" style="display:none">
+      <div class="smart-indicator" style="margin:12px 0">
+        <span class="smart-badge">SMART MODE</span>
+        <span>Automatically switches profiles based on weather forecast</span>
       </div>
-      <div class="threshold-value-labels" id="threshold-value-labels">
-        <span class="threshold-val-label val-low" id="val-low">82%</span>
-        <span class="threshold-val-label val-charge" id="val-charge">85%</span>
-        <span class="threshold-val-label val-high" id="val-high">92%</span>
+      <div style="font-size:13px;color:var(--text-dim);line-height:1.6;margin:10px 0">
+        <b>Decision rules (checked every 15 min):</b><br>
+        &bull; Thunderstorm in forecast → <b>Pure Backup</b> (charge to max)<br>
+        &bull; Heavy rain/snow + high precip probability → <b>Pure Backup</b><br>
+        &bull; Overcast + rain likely → <b>Balanced</b> (conserve battery)<br>
+        &bull; Sunny skies + 3h+ sun left + SOC above 60% → <b>Max Solar</b> (drain to harvest)<br>
+        &bull; Otherwise → <b>Balanced</b>
+      </div>
+      <div style="font-size:12px;margin-top:8px">
+        <b>Currently using:</b> <span id="smart-config-effective"></span><br>
+        <b>Reason:</b> <span id="smart-config-reason" style="color:var(--text-dim);font-style:italic"></span>
+      </div>
+      <div class="threshold-actions">
+        <button class="btn btn-activate" id="btn-activate-smart" onclick="activateBrowsedProfile()">Activate Smart Mode</button>
       </div>
     </div>
 
-    <div class="threshold-desc" id="threshold-desc">
-      <b>Grid Charge</b> below <span id="desc-low">82</span>% &rarr;
-      <b>Top off</b> to <span id="desc-charge">85</span>% &rarr;
-      <b>Use Battery</b> above <span id="desc-high">92</span>%
-    </div>
+    <!-- Normal profile slider (hidden when browsing smart) -->
+    <div id="profile-slider-section">
+      <div class="threshold-bar-wrap">
+        <div class="threshold-bar-labels"><span>0%</span><span>SOC Thresholds</span><span>100%</span></div>
+        <div class="threshold-bar" id="threshold-bar">
+          <div class="threshold-zone zone-charge" id="zone-charge"></div>
+          <div class="threshold-zone zone-hysteresis" id="zone-hysteresis"></div>
+          <div class="threshold-zone zone-normal" id="zone-normal"></div>
+          <div class="threshold-zone zone-battery" id="zone-battery"></div>
+          <div class="threshold-thumb thumb-low" id="thumb-low" data-key="low"></div>
+          <div class="threshold-thumb thumb-charge" id="thumb-charge" data-key="charge"></div>
+          <div class="threshold-thumb thumb-high" id="thumb-high" data-key="high"></div>
+        </div>
+        <div class="threshold-value-labels" id="threshold-value-labels">
+          <span class="threshold-val-label val-low" id="val-low">82%</span>
+          <span class="threshold-val-label val-charge" id="val-charge">85%</span>
+          <span class="threshold-val-label val-high" id="val-high">92%</span>
+        </div>
+      </div>
 
-    <div class="threshold-actions">
-      <button class="btn btn-reset" onclick="resetAutoProfile()">Reset to Default</button>
-      <button class="btn btn-save" onclick="saveAutoProfile()">Save</button>
-      <button class="btn btn-activate" id="btn-activate-profile" onclick="activateBrowsedProfile()">Activate</button>
+      <div class="threshold-desc" id="threshold-desc">
+        <b>Grid Charge</b> below <span id="desc-low">82</span>% &rarr;
+        <b>Top off</b> to <span id="desc-charge">85</span>% &rarr;
+        <b>Use Battery</b> above <span id="desc-high">92</span>%
+      </div>
+
+      <div class="threshold-actions">
+        <button class="btn btn-reset" onclick="resetAutoProfile()">Reset to Default</button>
+        <button class="btn btn-save" onclick="saveAutoProfile()">Save</button>
+        <button class="btn btn-activate" id="btn-activate-profile" onclick="activateBrowsedProfile()">Activate</button>
+      </div>
     </div>
   </div>
 
@@ -901,6 +956,10 @@
     <div class="metric">
       <span class="metric-label" style="min-width:100px"><b>Custom</b></span>
       <span style="font-size:12px;color:var(--text-dim)">Your own thresholds. Adjust the sliders and save.</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" style="min-width:100px"><b>Smart</b></span>
+      <span style="font-size:12px;color:var(--text-dim)">Automatically switches between profiles based on weather forecast. Charges before storms, drains battery for sunny periods.</span>
     </div>
   </div>
 </div>
@@ -1164,6 +1223,9 @@ function updateControlButtons(d) {
     currentAutoMode = d.active_auto_mode;
   }
   if (d?.auto_modes) autoModesData = d.auto_modes;
+  if (d?.smart_enabled !== undefined) smartEnabled = d.smart_enabled;
+  if (d?.smart_effective) smartEffective = d.smart_effective;
+  if (d?.smart_reason !== undefined) smartReason = d.smart_reason;
   updateAutoModesUI();
 }
 
@@ -1217,17 +1279,22 @@ let browsedMode = 'balanced';       // what config page is showing
 let autoModesData = null;           // cached from server
 let sliderValues = { low: 82, charge: 85, high: 92 };
 let sliderDirty = false;            // true if user dragged but hasn't saved
+let smartEnabled = false;
+let smartEffective = 'balanced';
+let smartReason = '';
 
 function updateAutoModesUI() {
-  // Dashboard buttons: highlight the server's active mode
-  document.querySelectorAll('#auto-modes-section .auto-mode-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mode === currentAutoMode);
+  const displayMode = smartEnabled ? 'smart' : currentAutoMode;
+
+  // Dashboard buttons: highlight smart or the active mode
+  document.querySelectorAll('#auto-modes-section .auto-mode-btn:not(.config-browse)').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === displayMode);
   });
 
   // Config page buttons: highlight browsed mode, mark active one too
   document.querySelectorAll('.auto-mode-btn.config-browse').forEach(btn => {
     const isBrowsed = btn.dataset.mode === browsedMode;
-    const isActive = btn.dataset.mode === currentAutoMode;
+    const isActive = btn.dataset.mode === displayMode;
     btn.classList.toggle('browsing', isBrowsed);
     btn.classList.toggle('active', isBrowsed && isActive);
   });
@@ -1235,15 +1302,44 @@ function updateAutoModesUI() {
   // Show/hide activate button (hide if browsed == active)
   const activateBtn = document.getElementById('btn-activate-profile');
   if (activateBtn) {
-    activateBtn.classList.toggle('hidden', browsedMode === currentAutoMode);
+    const effectiveActive = smartEnabled ? 'smart' : currentAutoMode;
+    activateBtn.classList.toggle('hidden', browsedMode === effectiveActive);
   }
 
   // Show/hide profile selector on dashboard based on manual mode
   const section = document.getElementById('auto-modes-section');
   if (section) section.style.display = isManual ? 'none' : 'block';
 
-  // Update sliders to show browsed mode's values
-  if (autoModesData && autoModesData[browsedMode]) {
+  // Smart indicator on dashboard
+  const smartInd = document.getElementById('smart-indicator');
+  if (smartInd) {
+    smartInd.style.display = smartEnabled && !isManual ? 'flex' : 'none';
+    const profileNames = { balanced: 'Balanced', max_solar: 'Max Solar', pure_backup: 'Pure Backup', custom: 'Custom' };
+    document.getElementById('smart-effective-label').textContent =
+      '→ ' + (profileNames[smartEffective] || smartEffective);
+    document.getElementById('smart-reason-label').textContent = smartReason || '';
+  }
+
+  // Toggle slider vs smart info on config page
+  const sliderSection = document.getElementById('profile-slider-section');
+  const smartConfigInfo = document.getElementById('smart-config-info');
+  if (sliderSection && smartConfigInfo) {
+    if (browsedMode === 'smart') {
+      sliderSection.style.display = 'none';
+      smartConfigInfo.style.display = '';
+      const names = { balanced: 'Balanced', max_solar: 'Max Solar', pure_backup: 'Pure Backup', custom: 'Custom' };
+      document.getElementById('smart-config-effective').textContent = names[smartEffective] || smartEffective;
+      document.getElementById('smart-config-reason').textContent = smartReason || 'Waiting for weather data...';
+      const activateSmartBtn = document.getElementById('btn-activate-smart');
+      if (activateSmartBtn) activateSmartBtn.classList.toggle('hidden', smartEnabled);
+    } else {
+      sliderSection.style.display = '';
+      smartConfigInfo.style.display = 'none';
+    }
+  }
+
+  // Update sliders to show browsed mode's values (not for smart — it has no own thresholds)
+  if (browsedMode !== 'smart' && autoModesData && autoModesData[browsedMode]) {
     if (!sliderDirty) {
       sliderValues = { ...autoModesData[browsedMode] };
     }
@@ -1362,16 +1458,24 @@ async function setAutoProfile(mode) {
         body: JSON.stringify({ mode })
       });
       const data = await resp.json();
-      if (data.active_mode) {
+      if (mode === 'smart') {
+        smartEnabled = true;
+        smartEffective = data.smart_effective || 'balanced';
+        smartReason = data.smart_reason || '';
+        currentAutoMode = smartEffective;
+        browsedMode = 'smart';
+      } else if (data.active_mode) {
+        smartEnabled = false;
         currentAutoMode = data.active_mode;
         browsedMode = data.active_mode;
-        if (data.thresholds) {
-          if (!autoModesData) autoModesData = {};
-          autoModesData[mode] = data.thresholds;
-          sliderValues = { ...data.thresholds };
-        }
-        updateAutoModesUI();
       }
+      if (data.thresholds) {
+        if (!autoModesData) autoModesData = {};
+        const profileKey = mode === 'smart' ? smartEffective : mode;
+        autoModesData[profileKey] = data.thresholds;
+        sliderValues = { ...data.thresholds };
+      }
+      updateAutoModesUI();
     } catch (e) { console.error('Failed to set auto profile:', e); }
   });
 }
@@ -1380,7 +1484,12 @@ async function setAutoProfile(mode) {
 function browseAutoProfile(mode) {
   sliderDirty = false;
   browsedMode = mode;
-  if (autoModesData && autoModesData[mode]) {
+  if (mode === 'smart') {
+    // Show the effective profile's sliders (read-only feel)
+    if (autoModesData && autoModesData[smartEffective]) {
+      sliderValues = { ...autoModesData[smartEffective] };
+    }
+  } else if (autoModesData && autoModesData[mode]) {
     sliderValues = { ...autoModesData[mode] };
   }
   updateAutoModesUI();

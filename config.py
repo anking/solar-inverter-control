@@ -115,6 +115,18 @@ MODES_DEFAULTS = {
     },
 }
 
+# =============================================================================
+# SMART MODE — weather-based automatic profile switching
+# =============================================================================
+
+SMART_STORM_WMO_CODES = {95, 96, 99}                       # thunderstorms
+SMART_BAD_WMO_CODES = {65, 66, 67, 75, 77, 82, 85, 86}    # heavy rain/snow
+SMART_CLOUD_HEAVY_PCT = 80    # cloud cover % = heavy overcast
+SMART_PRECIP_PROB_HIGH = 70   # precipitation probability % = likely rain
+SMART_SOC_DRAIN_OK = 60       # don't drain battery below this for max_solar
+SMART_COOLDOWN_MINUTES = 60   # minimum minutes between profile switches
+SMART_EVAL_INTERVAL = 900     # seconds between smart evaluations (15 min)
+
 
 def load_auto_modes():
     """Load auto mode profiles from JSON file, falling back to defaults."""
