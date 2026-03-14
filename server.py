@@ -283,14 +283,18 @@ async def control_loop():
                         if status["charge_mode"] != CHARGE_OSO:
                             await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
-                # SOC topped off — grid powers load, solar-only charging
+                # SOC in middle zone — hysteresis: keep current mode
+                # If already SBU (draining from high), stay SBU until charge threshold
+                # If already UTI (charged from low), stay UTI until high threshold
                 elif grid_present and chg_t <= soc < hi_t:
-                    if current_mode != MODE_UTI:
+                    if current_mode == MODE_SBU:
+                        pass  # keep draining until charge threshold
+                    elif current_mode != MODE_UTI:
                         logging.info(f"SOC {soc}% >= {chg_t}% → UTI (charged)")
                         await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
                         await asyncio.sleep(0.5)
                     if status["charge_mode"] != CHARGE_OSO:
-                        logging.info(f"SOC {soc}% >= {chg_t}% → OSO")
+                        logging.info(f"SOC {soc}% in middle zone → OSO")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
                 # SOC high — use battery
