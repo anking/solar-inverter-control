@@ -436,7 +436,16 @@
   .weather-hour {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     min-width: 44px; padding: 6px 4px; border-radius: 6px;
-    font-size: 10px; color: var(--text-dim);
+    font-size: 10px; color: var(--text-dim); cursor: default;
+  }
+  #weather-tooltip {
+    display: none; position: fixed; z-index: 200;
+    background: #1a1a30; border: 1px solid #4a4a6a; color: var(--text);
+    font-size: 12px; font-weight: 400; line-height: 1.4;
+    padding: 8px 12px; border-radius: 8px;
+    white-space: normal; width: max-content; max-width: 220px;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4); text-align: left;
   }
   .weather-hour.now { background: rgba(56,189,248,0.12); color: var(--text); }
   .weather-hour .wh-icon { font-size: 16px; }
@@ -759,6 +768,7 @@
         <input type="text" id="weather-zip" class="weather-zip-input" placeholder="Zip code"
                maxlength="5" inputmode="numeric" pattern="[0-9]*">
         <button class="btn" onclick="setWeatherZip()">Set Location</button>
+        <button class="btn" id="weather-zip-cancel" style="display:none" onclick="cancelWeatherZipChange()">Cancel</button>
       </div>
       <div id="weather-zip-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
     </div>
@@ -771,6 +781,7 @@
       </div>
     </div>
   </div>
+  <div id="weather-tooltip"></div>
 
   <!-- =============== CONTROLS =============== -->
   <div class="card controls-card" id="controls-card">
@@ -1813,18 +1824,40 @@ function renderWeather(data) {
     const d = new Date(times[i]);
     const hr = d.getHours();
     const label = hr === 0 ? '12a' : hr < 12 ? hr + 'a' : hr === 12 ? '12p' : (hr - 12) + 'p';
-    const [hIcon] = wmoLookup(h.weather_code[i]);
+    const [hIcon, hDesc] = wmoLookup(h.weather_code[i]);
     const hTemp = Math.round(h.temperature_2m[i]);
     const hCloud = h.cloud_cover[i];
+    const hHumid = h.relative_humidity_2m[i];
+    const hPrecip = h.precipitation_probability[i];
+    const hWind = Math.round(h.wind_speed_10m[i]);
+    const tip = `${hIcon} <b>${hDesc}</b><br>Temp: ${hTemp}°F<br>Cloud: ${hCloud}%<br>Humidity: ${hHumid}%<br>Precip: ${hPrecip}%<br>Wind: ${hWind} mph`;
     const cls = i === curIdx ? 'weather-hour now' : 'weather-hour';
-    html += `<div class="${cls}">
+    html += `<div class="${cls}" data-tip="${tip.replace(/"/g, '&quot;')}">
       <div style="font-size:11px">${label}</div>
       <div class="wh-icon">${hIcon}</div>
       <div class="wh-temp">${hTemp}°</div>
       ${cloudBar(hCloud)}
     </div>`;
   }
-  document.getElementById('weather-hourly').innerHTML = html;
+  const hourlyEl = document.getElementById('weather-hourly');
+  hourlyEl.innerHTML = html;
+  // Attach tooltip hover handlers
+  const tooltip = document.getElementById('weather-tooltip');
+  hourlyEl.querySelectorAll('.weather-hour').forEach(el => {
+    el.addEventListener('mouseenter', (e) => {
+      tooltip.innerHTML = el.dataset.tip;
+      tooltip.style.display = 'block';
+      const rect = el.getBoundingClientRect();
+      tooltip.style.left = rect.left + 'px';
+      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+      // Keep within viewport
+      const tr = tooltip.getBoundingClientRect();
+      if (tr.right > window.innerWidth) tooltip.style.left = (window.innerWidth - tr.width - 8) + 'px';
+      if (tr.left < 0) tooltip.style.left = '8px';
+      if (tr.top < 0) tooltip.style.top = (rect.bottom + 8) + 'px';
+    });
+    el.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  });
 }
 
 async function setWeatherZip() {
@@ -1865,6 +1898,13 @@ function changeWeatherZip() {
   document.getElementById('weather-content').style.display = 'none';
   document.getElementById('weather-zip').value = '';
   document.getElementById('weather-zip-error').style.display = 'none';
+  document.getElementById('weather-zip-cancel').style.display = '';
+}
+
+function cancelWeatherZipChange() {
+  document.getElementById('weather-setup').style.display = 'none';
+  document.getElementById('weather-content').style.display = '';
+  document.getElementById('weather-zip-cancel').style.display = 'none';
 }
 
 // ============================================================
