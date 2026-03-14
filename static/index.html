@@ -681,6 +681,7 @@
       <div class="icon">&#127968;</div>
       <div class="node-label">Consumption</div>
       <div class="node-value" id="flow-load">-- <span class="node-sub">W</span></div>
+      <div class="node-sub" id="flow-load-pct">--%</div>
     </div>
   </div>
 
@@ -1116,6 +1117,7 @@ function updateDashboard(d) {
 
   // Load node
   document.getElementById('flow-load').innerHTML = `${loadPower} <span class="node-sub">W</span>`;
+  document.getElementById('flow-load-pct').textContent = `${d.load_percent ?? '--'}%`;
 
   // Inverter mode — show both output and charge mode
   document.getElementById('flow-inv-mode').textContent = `${outMode} / ${chargeMode}`;

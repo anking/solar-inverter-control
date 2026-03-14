@@ -14,7 +14,7 @@ from config import (
     REG_PV2_VOLTAGE, REG_PV2_CURRENT, REG_PV2_POWER,
     REG_TOTAL_CHARGE_POWER, REG_GRID_VOLTAGE, REG_GRID_FREQUENCY,
     REG_OUTPUT_VOLTAGE, REG_LOAD_CURRENT, REG_LOAD_POWER,
-    REG_LOAD_APPARENT_POWER, REG_DEVICE_STATE,
+    REG_LOAD_APPARENT_POWER, REG_LOAD_PERCENT, REG_DEVICE_STATE,
     REG_PV_GENERATION_TODAY, REG_LOAD_CONSUMPTION_TODAY,
     REG_GRID_CONSUMPTION_TODAY,
     REG_OUTPUT_MODE, REG_CHARGE_MODE, REG_PASSWORD,
@@ -211,8 +211,8 @@ class InverterController:
         blk1 = self.read_registers(0x0100, 18)
         time.sleep(0.05)
 
-        # Bulk read 2: 0x0210–0x021C (13 regs) — device state, grid, output, load
-        blk2 = self.read_registers(0x0210, 13)
+        # Bulk read 2: 0x0210–0x021F (16 regs) — device state, grid, output, load
+        blk2 = self.read_registers(0x0210, 16)
         time.sleep(0.05)
 
         # Bulk read 3: 0xE204 and 0xE20F — output mode and charge mode
@@ -270,6 +270,7 @@ class InverterController:
             "pv_total_power": pv1_power + pv2_power,
             "total_charge_power": total_charge_power,
             "load_power": load_power,
+            "load_percent": g(blk2, REG_LOAD_PERCENT),
             "load_current": load_current_raw * 0.1,
             "grid_voltage": grid_voltage,
             "grid_frequency": grid_freq_raw * 0.01,

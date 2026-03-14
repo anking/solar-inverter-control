@@ -14,6 +14,7 @@ SERIAL_PORT = os.environ.get("SOLAR_SERIAL_PORT", "/dev/ttyUSB0")
 BAUD_RATE = int(os.environ.get("SOLAR_BAUD_RATE", "9600"))
 SLAVE_ADDRESS = int(os.environ.get("SOLAR_SLAVE_ADDRESS", "1"))
 INVERTER_PASSWORD = int(os.environ.get("SOLAR_INVERTER_PASSWORD", "6666"))
+INVERTER_RATED_POWER = int(os.environ.get("SOLAR_RATED_POWER", "10000"))  # watts
 
 # =============================================================================
 # CONTROL THRESHOLDS
@@ -70,6 +71,7 @@ REG_OUTPUT_VOLTAGE = 0x0216
 REG_LOAD_CURRENT = 0x0219
 REG_LOAD_POWER = 0x021B
 REG_LOAD_APPARENT_POWER = 0x021C
+REG_LOAD_PERCENT = 0x021F
 
 # Daily stats registers
 REG_PV_GENERATION_TODAY = 0xF02F
