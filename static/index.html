@@ -381,6 +381,24 @@
     font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.4;
   }
 
+  /* =========== CARD LOADING OVERLAY =========== */
+  .card { position: relative; }
+  .card-loading {
+    position: absolute; inset: 0; z-index: 50;
+    background: rgba(26, 26, 46, 0.7);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: all;
+  }
+  .card-spinner {
+    width: 28px; height: 28px;
+    border: 3px solid rgba(56,189,248,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* =========== CHARTS =========== */
   .chart-card { margin-bottom: 16px; }
   .chart-container { position: relative; height: 220px; }
@@ -679,7 +697,7 @@
   </div>
 
   <!-- =============== CONTROLS =============== -->
-  <div class="card controls-card">
+  <div class="card controls-card" id="controls-card">
     <div class="card-title">Controls</div>
     <div class="control-row">
       <span class="control-label">Control</span>
@@ -741,7 +759,7 @@
   </div>
 
   <!-- =============== CHARTS =============== -->
-  <div class="card chart-card">
+  <div class="card chart-card" id="history-card">
     <div class="card-title">History</div>
     <div class="chart-tabs">
       <button class="chart-tab active" onclick="loadHistory(6, this)">6h</button>
@@ -753,7 +771,7 @@
     <div class="chart-container"><canvas id="historyChart"></canvas></div>
   </div>
 
-  <div class="card chart-card">
+  <div class="card chart-card" id="daily-card">
     <div class="card-title">Daily Energy (kWh)</div>
     <div class="chart-container"><canvas id="dailyChart"></canvas></div>
   </div>
@@ -763,7 +781,7 @@
 
 <!-- =============== CONFIGURATION PAGE =============== -->
 <div class="page" id="page-config">
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" id="config-card" style="margin-bottom:16px">
     <div class="card-title">Auto Mode Configuration</div>
     <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px">
       Configure how the inverter automatically manages battery charge levels.
@@ -844,6 +862,31 @@
 </div>
 
 <script>
+// ============================================================
+// Card loading overlay
+// ============================================================
+function showCardLoading(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card || card.querySelector('.card-loading')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'card-loading';
+  overlay.innerHTML = '<div class="card-spinner"></div>';
+  card.appendChild(overlay);
+}
+
+function hideCardLoading(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const overlay = card.querySelector('.card-loading');
+  if (overlay) overlay.remove();
+}
+
+async function withLoading(cardId, fn) {
+  showCardLoading(cardId);
+  try { return await fn(); }
+  finally { hideCardLoading(cardId); }
+}
+
 // ============================================================
 // WebSocket
 // ============================================================
@@ -1067,9 +1110,9 @@ function updateControlButtons(d) {
   updateAutoModesUI();
 }
 
-async function setControlMode(mode) { await fetch(`/api/mode/${mode}`, { method: 'POST' }); }
-async function setOutputMode(mode) { await fetch(`/api/mode/output/${mode}`, { method: 'POST' }); }
-async function setChargeMode(mode) { await fetch(`/api/mode/charge/${mode}`, { method: 'POST' }); }
+async function setControlMode(mode) { await withLoading('controls-card', () => fetch(`/api/mode/${mode}`, { method: 'POST' })); }
+async function setOutputMode(mode) { await withLoading('controls-card', () => fetch(`/api/mode/output/${mode}`, { method: 'POST' })); }
+async function setChargeMode(mode) { await withLoading('controls-card', () => fetch(`/api/mode/charge/${mode}`, { method: 'POST' })); }
 
 // ============================================================
 // Inverter hint (updates based on current mode)
@@ -1253,24 +1296,27 @@ function initSliderDrag() {
 // Dashboard: switch active mode on server immediately
 async function setAutoProfile(mode) {
   sliderDirty = false;
-  try {
-    const resp = await fetch('/api/auto-modes/active', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode })
-    });
-    const data = await resp.json();
-    if (data.active_mode) {
-      currentAutoMode = data.active_mode;
-      browsedMode = data.active_mode;
-      if (data.thresholds) {
-        if (!autoModesData) autoModesData = {};
-        autoModesData[mode] = data.thresholds;
-        sliderValues = { ...data.thresholds };
+  const cardId = document.getElementById('page-config')?.classList.contains('active') ? 'config-card' : 'controls-card';
+  await withLoading(cardId, async () => {
+    try {
+      const resp = await fetch('/api/auto-modes/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      const data = await resp.json();
+      if (data.active_mode) {
+        currentAutoMode = data.active_mode;
+        browsedMode = data.active_mode;
+        if (data.thresholds) {
+          if (!autoModesData) autoModesData = {};
+          autoModesData[mode] = data.thresholds;
+          sliderValues = { ...data.thresholds };
+        }
+        updateAutoModesUI();
       }
-      updateAutoModesUI();
-    }
-  } catch (e) { console.error('Failed to set auto profile:', e); }
+    } catch (e) { console.error('Failed to set auto profile:', e); }
+  });
 }
 
 // Config page: browse a profile (view its sliders) without activating
@@ -1289,39 +1335,43 @@ async function activateBrowsedProfile() {
 }
 
 async function saveAutoProfile() {
-  try {
-    const resp = await fetch('/api/auto-modes/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: browsedMode, ...sliderValues })
-    });
-    const data = await resp.json();
-    if (data.thresholds) {
-      if (!autoModesData) autoModesData = {};
-      autoModesData[browsedMode] = data.thresholds;
-      sliderDirty = false;
-      updateDashboardTooltips();
-    }
-  } catch (e) { console.error('Failed to save profile:', e); }
+  await withLoading('config-card', async () => {
+    try {
+      const resp = await fetch('/api/auto-modes/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: browsedMode, ...sliderValues })
+      });
+      const data = await resp.json();
+      if (data.thresholds) {
+        if (!autoModesData) autoModesData = {};
+        autoModesData[browsedMode] = data.thresholds;
+        sliderDirty = false;
+        updateDashboardTooltips();
+      }
+    } catch (e) { console.error('Failed to save profile:', e); }
+  });
 }
 
 async function resetAutoProfile() {
-  try {
-    const resp = await fetch('/api/auto-modes/reset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: browsedMode })
-    });
-    const data = await resp.json();
-    if (data.thresholds) {
-      if (!autoModesData) autoModesData = {};
-      autoModesData[browsedMode] = data.thresholds;
-      sliderValues = { ...data.thresholds };
-      sliderDirty = false;
-      renderSlider();
-      updateDashboardTooltips();
-    }
-  } catch (e) { console.error('Failed to reset profile:', e); }
+  await withLoading('config-card', async () => {
+    try {
+      const resp = await fetch('/api/auto-modes/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: browsedMode })
+      });
+      const data = await resp.json();
+      if (data.thresholds) {
+        if (!autoModesData) autoModesData = {};
+        autoModesData[browsedMode] = data.thresholds;
+        sliderValues = { ...data.thresholds };
+        sliderDirty = false;
+        renderSlider();
+        updateDashboardTooltips();
+      }
+    } catch (e) { console.error('Failed to reset profile:', e); }
+  });
 }
 
 // ============================================================
@@ -1362,25 +1412,27 @@ async function loadHistory(hours, btn) {
     btn.classList.add('active');
   }
   historyHours = hours;
-  try {
-    const resp = await fetch(`/api/history?hours=${hours}`);
-    const data = await resp.json();
-    const max = 500;
-    let s = data;
-    if (data.length > max) { const step = Math.ceil(data.length / max); s = data.filter((_, i) => i % step === 0); }
+  await withLoading('history-card', async () => {
+    try {
+      const resp = await fetch(`/api/history?hours=${hours}`);
+      const data = await resp.json();
+      const max = 500;
+      let s = data;
+      if (data.length > max) { const step = Math.ceil(data.length / max); s = data.filter((_, i) => i % step === 0); }
 
-    // Convert to {x: Date, y: value} for time scale
-    historyChart.data.datasets[0].data = s.map(r => ({ x: new Date(r.timestamp), y: r.soc }));
-    historyChart.data.datasets[1].data = s.map(r => ({ x: new Date(r.timestamp), y: r.pv_total_power || 0 }));
-    historyChart.data.datasets[2].data = s.map(r => ({ x: new Date(r.timestamp), y: r.load_power || 0 }));
+      // Convert to {x: Date, y: value} for time scale
+      historyChart.data.datasets[0].data = s.map(r => ({ x: new Date(r.timestamp), y: r.soc }));
+      historyChart.data.datasets[1].data = s.map(r => ({ x: new Date(r.timestamp), y: r.pv_total_power || 0 }));
+      historyChart.data.datasets[2].data = s.map(r => ({ x: new Date(r.timestamp), y: r.load_power || 0 }));
 
-    // Fix X axis to the full requested time window
-    const now = new Date();
-    historyChart.options.scales.x.min = new Date(now.getTime() - hours * 3600000);
-    historyChart.options.scales.x.max = now;
+      // Fix X axis to the full requested time window
+      const now = new Date();
+      historyChart.options.scales.x.min = new Date(now.getTime() - hours * 3600000);
+      historyChart.options.scales.x.max = now;
 
-    historyChart.update('none');
-  } catch (e) { console.error('History load failed:', e); }
+      historyChart.update('none');
+    } catch (e) { console.error('History load failed:', e); }
+  });
 }
 
 const dailyChart = new Chart(document.getElementById('dailyChart').getContext('2d'), {
@@ -1404,15 +1456,17 @@ const dailyChart = new Chart(document.getElementById('dailyChart').getContext('2
 });
 
 async function loadDaily() {
-  try {
-    const resp = await fetch('/api/daily?days=30');
-    const data = await resp.json();
-    dailyChart.data.labels = data.map(r => r.date.slice(5));
-    dailyChart.data.datasets[0].data = data.map(r => r.pv_generation_kwh || 0);
-    dailyChart.data.datasets[1].data = data.map(r => r.load_consumption_kwh || 0);
-    dailyChart.data.datasets[2].data = data.map(r => r.grid_consumption_kwh || 0);
-    dailyChart.update('none');
-  } catch (e) { console.error('Daily load failed:', e); }
+  await withLoading('daily-card', async () => {
+    try {
+      const resp = await fetch('/api/daily?days=30');
+      const data = await resp.json();
+      dailyChart.data.labels = data.map(r => r.date.slice(5));
+      dailyChart.data.datasets[0].data = data.map(r => r.pv_generation_kwh || 0);
+      dailyChart.data.datasets[1].data = data.map(r => r.load_consumption_kwh || 0);
+      dailyChart.data.datasets[2].data = data.map(r => r.grid_consumption_kwh || 0);
+      dailyChart.update('none');
+    } catch (e) { console.error('Daily load failed:', e); }
+  });
 }
 
 // ============================================================
