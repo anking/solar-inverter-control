@@ -478,10 +478,10 @@
       <div class="stat-value" style="color:var(--blue)"><span id="grid-today">0</span> <span class="stat-unit">kWh</span></div>
       <div class="stat-label">Daily Grid Purchase</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" id="batt-power-card">
       <span class="stat-icon">&#128267;</span>
-      <div class="stat-value" style="color:var(--green)"><span id="charge-today">0</span> <span class="stat-unit">W</span></div>
-      <div class="stat-label">Charging Power</div>
+      <div class="stat-value"><span id="batt-power-val" style="color:var(--green)">0</span> <span class="stat-unit" id="batt-power-unit">W</span></div>
+      <div class="stat-label" id="batt-power-label">Charging Power</div>
     </div>
   </div>
 
@@ -653,9 +653,16 @@ function updateDashboard(d) {
   // Solar node
   document.getElementById('flow-pv').innerHTML = `${pvTotal} <span class="node-sub">W</span>`;
 
-  // Battery node
+  // Battery node — negative current = charging, positive = discharging
   const battKw = (battPowerW / 1000).toFixed(2);
-  document.getElementById('flow-batt').innerHTML = `${battKw} <span class="node-sub">kW</span>`;
+  const battDischarging = battI > 0.5;
+  const battCharging = battI < -0.5;
+  const battEl = document.getElementById('flow-batt');
+  battEl.innerHTML = battDischarging
+    ? `<span style="color:var(--red)">${battKw}</span> <span class="node-sub" style="color:var(--red)">kW ▼</span>`
+    : battCharging
+    ? `<span style="color:var(--green)">${battKw}</span> <span class="node-sub" style="color:var(--green)">kW ▲</span>`
+    : `${battKw} <span class="node-sub">kW</span>`;
   const socEl = document.getElementById('flow-soc');
   socEl.textContent = `${soc} %`;
   socEl.style.color = soc <= 82 ? 'var(--red)' : soc <= 92 ? 'var(--yellow)' : 'var(--green)';
@@ -688,7 +695,22 @@ function updateDashboard(d) {
   document.getElementById('pv-today').textContent = (d.pv_generation_today ?? 0).toFixed(1);
   document.getElementById('load-today').textContent = (d.load_consumption_today ?? 0).toFixed(1);
   document.getElementById('grid-today').textContent = (d.grid_consumption_today ?? 0).toFixed(1);
-  document.getElementById('charge-today').textContent = d.total_charge_power ?? 0;
+  // Battery power card — show charge (green) or discharge (red)
+  const bpVal = document.getElementById('batt-power-val');
+  const bpLabel = document.getElementById('batt-power-label');
+  if (battDischarging) {
+    bpVal.textContent = Math.round(battPowerW);
+    bpVal.style.color = 'var(--red)';
+    bpLabel.textContent = 'Discharging Power ▼';
+  } else if (battCharging) {
+    bpVal.textContent = d.total_charge_power ?? Math.round(battPowerW);
+    bpVal.style.color = 'var(--green)';
+    bpLabel.textContent = 'Charging Power ▲';
+  } else {
+    bpVal.textContent = d.total_charge_power ?? 0;
+    bpVal.style.color = 'var(--green)';
+    bpLabel.textContent = 'Battery Power';
+  }
 
   // -- Detail cards --
   document.getElementById('det-soc').textContent = soc;
