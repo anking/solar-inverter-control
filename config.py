@@ -3,6 +3,7 @@ Shared configuration for solar inverter controller and dashboard.
 Values can be overridden via environment variables.
 """
 
+import json
 import os
 
 # =============================================================================
@@ -94,3 +95,48 @@ CHARGE_OSO = 3
 
 MODE_NAMES = {0: "SOL", 1: "UTI", 2: "SBU", 3: "SUB"}
 CHARGE_NAMES = {2: "SNU", 3: "OSO"}
+
+# =============================================================================
+# AUTO MODE PROFILES
+# =============================================================================
+
+MODES_FILE = os.environ.get(
+    "SOLAR_MODES_FILE",
+    os.path.join(os.path.dirname(DB_PATH), "auto_modes.json"),
+)
+
+MODES_DEFAULTS = {
+    "active_mode": "balanced",
+    "modes": {
+        "balanced":    {"low": 82, "charge": 85, "high": 92},
+        "max_solar":   {"low": 30, "charge": 35, "high": 92},
+        "pure_backup": {"low": 95, "charge": 99, "high": 100},
+        "custom":      {"low": 50, "charge": 60, "high": 80},
+    },
+}
+
+
+def load_auto_modes():
+    """Load auto mode profiles from JSON file, falling back to defaults."""
+    try:
+        with open(MODES_FILE, "r") as f:
+            data = json.load(f)
+        # Ensure all required modes exist
+        for name, defaults in MODES_DEFAULTS["modes"].items():
+            if name not in data.get("modes", {}):
+                data.setdefault("modes", {})[name] = dict(defaults)
+        if "active_mode" not in data:
+            data["active_mode"] = MODES_DEFAULTS["active_mode"]
+        return data
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = json.loads(json.dumps(MODES_DEFAULTS))  # deep copy
+        save_auto_modes(data)
+        return data
+
+
+def save_auto_modes(data):
+    """Save auto mode profiles to JSON file atomically."""
+    tmp = MODES_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, MODES_FILE)

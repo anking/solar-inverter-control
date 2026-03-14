@@ -23,14 +23,16 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
 
 from config import (
     SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS,
-    LOW_THRESHOLD, CHARGE_THRESHOLD, HIGH_THRESHOLD, POLL_INTERVAL,
+    POLL_INTERVAL,
     WEB_HOST, WEB_PORT, LOG_FILE,
     MODE_UTI, MODE_SBU, MODE_SUB, MODE_SOL,
     CHARGE_SNU, CHARGE_OSO,
     MODE_NAMES, CHARGE_NAMES,
+    MODES_DEFAULTS, load_auto_modes, save_auto_modes,
 )
 from inverter import InverterController
 from database import (
@@ -49,6 +51,8 @@ log_clients: set = set()
 manual_mode: bool = False
 control_task: asyncio.Task = None
 log_event_loop: asyncio.AbstractEventLoop = None
+auto_modes: dict = {}
+active_auto_mode: str = "balanced"
 
 
 # =============================================================================
@@ -123,11 +127,13 @@ async def control_loop():
     """Main control loop — reads inverter, logs data, controls modes, pushes to WS."""
     global latest_status, controller
 
+    mode_cfg = auto_modes["modes"][active_auto_mode]
     logging.info("=" * 60)
     logging.info("Solar Controller + Dashboard Starting")
-    logging.info(f"  Low threshold:  {LOW_THRESHOLD}% (grid charge → SUB/SNU)")
-    logging.info(f"  Charge target:  {CHARGE_THRESHOLD}% (stop grid charge → UTI/OSO)")
-    logging.info(f"  High threshold: {HIGH_THRESHOLD}% (use battery → SBU/OSO)")
+    logging.info(f"  Auto mode:      {active_auto_mode}")
+    logging.info(f"  Low threshold:  {mode_cfg['low']}% (grid charge → SUB/SNU)")
+    logging.info(f"  Charge target:  {mode_cfg['charge']}% (stop grid charge → UTI/OSO)")
+    logging.info(f"  High threshold: {mode_cfg['high']}% (use battery → SBU/OSO)")
     logging.info(f"  Poll interval:  {POLL_INTERVAL}s")
     logging.info("=" * 60)
 
@@ -159,6 +165,8 @@ async def control_loop():
             consecutive_errors = 0
             status["manual_mode"] = manual_mode
             status["timestamp"] = datetime.now().isoformat()
+            status["active_auto_mode"] = active_auto_mode
+            status["auto_modes"] = auto_modes["modes"]
             latest_status = status
 
             # Log to database
@@ -190,20 +198,20 @@ async def control_loop():
             )
 
             # --- CONTROL LOGIC (skip if manual override) ---
-            # States:
-            #   SOC <= 82% (LOW)  → SUB/SNU: grid charges battery actively
-            #   82% < SOC < 85%  → SUB/SNU: keep charging until topped off
-            #   SOC >= 85% (CHARGED) → UTI/OSO: grid powers load, solar-only charge
-            #   SOC >= 92% (HIGH) → SBU/OSO: battery powers load
-            #   Grid down → SBU: battery backup
             if not manual_mode:
+                # Read thresholds dynamically from active auto mode
+                mcfg = auto_modes["modes"][active_auto_mode]
+                low_t = mcfg["low"]
+                chg_t = mcfg["charge"]
+                hi_t = mcfg["high"]
+
                 if startup:
-                    if soc >= HIGH_THRESHOLD:
+                    if soc >= hi_t:
                         await asyncio.to_thread(controller.set_output_mode, MODE_SBU)
                         await asyncio.sleep(0.5)
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
-                    elif soc <= CHARGE_THRESHOLD:
-                        logging.info(f"Startup: SOC {soc}% <= {CHARGE_THRESHOLD}% → SUB/SNU (grid charging)")
+                    elif soc <= chg_t:
+                        logging.info(f"Startup: SOC {soc}% <= {chg_t}% → SUB/SNU (grid charging)")
                         await asyncio.to_thread(controller.set_output_mode, MODE_SUB)
                         await asyncio.sleep(0.5)
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_SNU)
@@ -226,46 +234,43 @@ async def control_loop():
                     controller.grid_was_down = False
 
                 # SOC low — actively charge from grid
-                if grid_present and soc <= LOW_THRESHOLD:
+                if grid_present and soc <= low_t:
                     if current_mode != MODE_SUB:
-                        logging.info(f"SOC {soc}% <= {LOW_THRESHOLD}% → SUB (grid charging)")
+                        logging.info(f"SOC {soc}% <= {low_t}% → SUB (grid charging)")
                         await asyncio.to_thread(controller.set_output_mode, MODE_SUB)
                         await asyncio.sleep(0.5)
                     if status["charge_mode"] != CHARGE_SNU:
-                        logging.info(f"SOC {soc}% <= {LOW_THRESHOLD}% → SNU")
+                        logging.info(f"SOC {soc}% <= {low_t}% → SNU")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_SNU)
 
-                # SOC charging — keep SUB/SNU until topped off at CHARGE_THRESHOLD
-                elif grid_present and LOW_THRESHOLD < soc < CHARGE_THRESHOLD:
+                # SOC charging — keep SUB/SNU until topped off
+                elif grid_present and low_t < soc < chg_t:
                     if current_mode == MODE_SUB:
-                        # Already charging from grid, keep going until 85%
-                        pass
+                        pass  # keep charging until charge threshold
                     elif current_mode != MODE_UTI:
-                        # Not charging and not UTI — go to UTI/OSO
                         await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
                         await asyncio.sleep(0.5)
                         if status["charge_mode"] != CHARGE_OSO:
                             await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
                 # SOC topped off — grid powers load, solar-only charging
-                elif grid_present and CHARGE_THRESHOLD <= soc < HIGH_THRESHOLD:
+                elif grid_present and chg_t <= soc < hi_t:
                     if current_mode != MODE_UTI:
-                        logging.info(f"SOC {soc}% >= {CHARGE_THRESHOLD}% → UTI (charged)")
+                        logging.info(f"SOC {soc}% >= {chg_t}% → UTI (charged)")
                         await asyncio.to_thread(controller.set_output_mode, MODE_UTI)
                         await asyncio.sleep(0.5)
                     if status["charge_mode"] != CHARGE_OSO:
-                        logging.info(f"SOC {soc}% >= {CHARGE_THRESHOLD}% → OSO")
+                        logging.info(f"SOC {soc}% >= {chg_t}% → OSO")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
                 # SOC high — use battery
-                elif grid_present and soc >= HIGH_THRESHOLD:
+                elif grid_present and soc >= hi_t:
                     if current_mode != MODE_SBU:
-                        logging.info(f"SOC {soc}% >= {HIGH_THRESHOLD}% → SBU")
+                        logging.info(f"SOC {soc}% >= {hi_t}% → SBU")
                         await asyncio.to_thread(controller.set_output_mode, MODE_SBU)
                         await asyncio.sleep(0.5)
                     if status["charge_mode"] != CHARGE_OSO:
-                        logging.info(f"SOC {soc}% >= {HIGH_THRESHOLD}% → OSO")
-                        await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
+                        logging.info(f"SOC {soc}% >= {hi_t}% → OSO")
                         await asyncio.to_thread(controller.set_charge_mode, CHARGE_OSO)
 
             # Broadcast to WebSocket clients
@@ -301,11 +306,14 @@ async def broadcast_status(status):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global controller, control_task, log_event_loop
+    global controller, control_task, log_event_loop, auto_modes, active_auto_mode
 
     setup_logging()
     log_event_loop = asyncio.get_running_loop()
     init_db()
+
+    auto_modes = load_auto_modes()
+    active_auto_mode = auto_modes.get("active_mode", "balanced")
 
     controller = InverterController(SERIAL_PORT, BAUD_RATE, SLAVE_ADDRESS)
     connected = controller.connect()
@@ -367,20 +375,26 @@ async def api_daily(days: int = 30):
 
 @app.get("/api/config")
 async def api_config():
+    mcfg = auto_modes["modes"][active_auto_mode]
     return JSONResponse({
-        "low_threshold": LOW_THRESHOLD,
-        "high_threshold": HIGH_THRESHOLD,
+        "low_threshold": mcfg["low"],
+        "charge_threshold": mcfg["charge"],
+        "high_threshold": mcfg["high"],
         "poll_interval": POLL_INTERVAL,
         "manual_mode": manual_mode,
+        "active_auto_mode": active_auto_mode,
+        "auto_modes": auto_modes["modes"],
     })
 
 
 # --- Manual Control ---
 
 async def _broadcast_manual_update():
-    """Push updated manual_mode to all WS clients immediately."""
+    """Push updated mode state to all WS clients immediately."""
     if latest_status:
         latest_status["manual_mode"] = manual_mode
+        latest_status["active_auto_mode"] = active_auto_mode
+        latest_status["auto_modes"] = auto_modes["modes"]
         await broadcast_status(latest_status)
 
 
@@ -434,6 +448,65 @@ async def set_charge_mode(mode: str):
         latest_status["charge_mode_name"] = CHARGE_NAMES.get(mode_val, str(mode_val))
         await broadcast_status(latest_status)
     return JSONResponse({"success": success, "mode": mode.upper()})
+
+
+# --- Auto Mode Profiles ---
+
+VALID_AUTO_MODES = {"balanced", "max_solar", "pure_backup", "custom"}
+
+
+@app.get("/api/auto-modes")
+async def get_auto_modes():
+    return JSONResponse({
+        "active_mode": active_auto_mode,
+        "modes": auto_modes["modes"],
+    })
+
+
+@app.post("/api/auto-modes/active")
+async def set_active_auto_mode(request: Request):
+    global active_auto_mode
+    body = await request.json()
+    mode = body.get("mode", "")
+    if mode not in VALID_AUTO_MODES:
+        return JSONResponse({"error": f"Invalid mode: {mode}"}, status_code=400)
+    active_auto_mode = mode
+    auto_modes["active_mode"] = mode
+    await asyncio.to_thread(save_auto_modes, auto_modes)
+    logging.info(f"Auto mode switched to: {mode} (low={auto_modes['modes'][mode]['low']}%, charge={auto_modes['modes'][mode]['charge']}%, high={auto_modes['modes'][mode]['high']}%)")
+    await _broadcast_manual_update()
+    return JSONResponse({"active_mode": mode, "thresholds": auto_modes["modes"][mode]})
+
+
+@app.post("/api/auto-modes/update")
+async def update_auto_mode(request: Request):
+    body = await request.json()
+    mode = body.get("mode", "")
+    if mode not in VALID_AUTO_MODES:
+        return JSONResponse({"error": f"Invalid mode: {mode}"}, status_code=400)
+    low = int(body.get("low", 0))
+    charge = int(body.get("charge", 0))
+    high = int(body.get("high", 0))
+    if not (10 <= low < charge < high <= 100):
+        return JSONResponse({"error": "Must satisfy: 10 <= low < charge < high <= 100"}, status_code=400)
+    auto_modes["modes"][mode] = {"low": low, "charge": charge, "high": high}
+    await asyncio.to_thread(save_auto_modes, auto_modes)
+    logging.info(f"Auto mode '{mode}' updated: low={low}%, charge={charge}%, high={high}%")
+    await _broadcast_manual_update()
+    return JSONResponse({"mode": mode, "thresholds": auto_modes["modes"][mode]})
+
+
+@app.post("/api/auto-modes/reset")
+async def reset_auto_mode(request: Request):
+    body = await request.json()
+    mode = body.get("mode", "")
+    if mode not in VALID_AUTO_MODES:
+        return JSONResponse({"error": f"Invalid mode: {mode}"}, status_code=400)
+    auto_modes["modes"][mode] = dict(MODES_DEFAULTS["modes"][mode])
+    await asyncio.to_thread(save_auto_modes, auto_modes)
+    logging.info(f"Auto mode '{mode}' reset to defaults")
+    await _broadcast_manual_update()
+    return JSONResponse({"mode": mode, "thresholds": auto_modes["modes"][mode]})
 
 
 # --- WebSocket ---

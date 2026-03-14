@@ -39,10 +39,50 @@
     align-items: center;
     border-bottom: 1px solid var(--surface2);
   }
+  .header-left { display: flex; align-items: center; gap: 12px; }
   .header h1 { font-size: 18px; font-weight: 600; }
   .header-right {
     display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-dim);
   }
+
+  /* =========== HAMBURGER MENU =========== */
+  .hamburger {
+    background: none; border: none; color: var(--text); cursor: pointer;
+    padding: 4px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .hamburger span {
+    display: block; width: 20px; height: 2px; background: var(--text);
+    border-radius: 1px; transition: all 0.2s;
+  }
+  .nav-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 300;
+  }
+  .nav-overlay.open { display: block; }
+  .nav-drawer {
+    position: fixed; top: 0; left: -260px;
+    width: 260px; height: 100%; background: var(--surface);
+    border-right: 1px solid var(--surface2);
+    z-index: 310; transition: left 0.25s ease;
+    display: flex; flex-direction: column;
+  }
+  .nav-drawer.open { left: 0; }
+  .nav-drawer-header {
+    padding: 16px 20px; border-bottom: 1px solid var(--surface2);
+    font-size: 16px; font-weight: 600;
+  }
+  .nav-drawer a {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px; color: var(--text); text-decoration: none;
+    font-size: 14px; transition: background 0.15s;
+  }
+  .nav-drawer a:hover { background: var(--surface2); }
+  .nav-drawer a.active { color: var(--accent); background: rgba(56,189,248,0.08); }
+  .nav-drawer a .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+
+  /* =========== PAGES =========== */
+  .page { max-width: 900px; margin: 0 auto; padding: 16px; display: none; }
+  .page.active { display: block; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
   .status-dot.connected { background: var(--green); }
   .mode-pill {
@@ -58,9 +98,6 @@
     padding: 6px; font-weight: 600; font-size: 13px; display: none;
   }
   .manual-banner.active { display: block; }
-
-  /* =========== MAIN LAYOUT =========== */
-  .page { max-width: 900px; margin: 0 auto; padding: 16px; }
 
   /* =========== ENERGY FLOW DIAGRAM =========== */
   .flow-diagram {
@@ -257,6 +294,88 @@
   /* Mobile: tap toggles via JS class */
   .has-hint.hint-visible .hint { display: block; }
 
+  /* =========== AUTO MODE PROFILES (Config page) =========== */
+
+  .auto-mode-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .auto-mode-btn {
+    padding: 7px 12px; border: 1px solid var(--surface2); border-radius: 8px;
+    background: var(--surface2); color: var(--text);
+    font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .auto-mode-btn:hover { background: #3d3d5c; }
+  .auto-mode-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .threshold-bar-wrap {
+    margin: 12px 0 6px;
+    padding: 0 4px;
+  }
+  .threshold-bar-labels {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .threshold-bar {
+    position: relative;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--surface2);
+    overflow: visible;
+    user-select: none;
+    touch-action: none;
+  }
+  .threshold-zone {
+    position: absolute; top: 0; bottom: 0;
+    border-radius: 6px;
+    transition: left 0.3s, width 0.3s;
+  }
+  .zone-charge  { background: rgba(239,68,68,0.3); border-radius: 6px 0 0 6px; }
+  .zone-hysteresis { background: rgba(234,179,8,0.25); }
+  .zone-normal  { background: rgba(59,130,246,0.2); }
+  .zone-battery { background: rgba(34,197,94,0.25); border-radius: 0 6px 6px 0; }
+
+  .threshold-thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 18px; height: 34px;
+    border-radius: 4px;
+    border: 2px solid;
+    cursor: grab;
+    z-index: 10;
+    transition: left 0.3s;
+  }
+  .threshold-thumb:active { cursor: grabbing; transition: none; }
+  .threshold-thumb.dragging { transition: none; }
+  .thumb-low    { background: rgba(239,68,68,0.6); border-color: var(--red); }
+  .thumb-charge { background: rgba(234,179,8,0.6); border-color: var(--yellow); }
+  .thumb-high   { background: rgba(34,197,94,0.6); border-color: var(--green); }
+
+  .threshold-value-labels {
+    position: relative; height: 20px; margin-top: 4px;
+  }
+  .threshold-val-label {
+    position: absolute; transform: translateX(-50%);
+    font-size: 11px; font-weight: 600;
+    transition: left 0.3s;
+  }
+  .threshold-val-label.dragging { transition: none; }
+  .val-low    { color: var(--red); }
+  .val-charge { color: var(--yellow); }
+  .val-high   { color: var(--green); }
+
+  .threshold-actions {
+    display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end;
+  }
+  .threshold-actions .btn { font-size: 11px; padding: 5px 12px; }
+  .btn-save { background: var(--green); color: #000; border-color: var(--green); }
+  .btn-save:hover { background: #1aad52; }
+  .btn-reset { background: transparent; color: var(--text-dim); border-color: var(--surface2); }
+  .btn-reset:hover { color: var(--text); background: var(--surface2); }
+
+  .threshold-desc {
+    font-size: 11px; color: var(--text-dim); margin-top: 2px; line-height: 1.4;
+  }
+
   /* =========== CHARTS =========== */
   .chart-card { margin-bottom: 16px; }
   .chart-container { position: relative; height: 220px; }
@@ -349,13 +468,20 @@
     .node-load { right: 4%; }
     .stat-value { font-size: 20px; }
     .stat-card { padding: 12px; }
+    .threshold-bar { height: 36px; }
+    .threshold-thumb { width: 22px; height: 42px; }
   }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>Solar Inverter</h1>
+  <div class="header-left">
+    <button class="hamburger" id="hamburger-btn" onclick="toggleNav()">
+      <span></span><span></span><span></span>
+    </button>
+    <h1>Solar Inverter</h1>
+  </div>
   <div class="header-right">
     <span class="mode-pill" id="header-mode">--</span>
     <span id="clock"></span>
@@ -364,9 +490,21 @@
   </div>
 </div>
 
+<!-- Navigation Drawer -->
+<div class="nav-overlay" id="nav-overlay" onclick="toggleNav()"></div>
+<div class="nav-drawer" id="nav-drawer">
+  <div class="nav-drawer-header">Solar Inverter</div>
+  <a href="#" class="active" data-page="dashboard" onclick="navigateTo('dashboard', event)">
+    <span class="nav-icon">&#9889;</span> Dashboard
+  </a>
+  <a href="#" data-page="config" onclick="navigateTo('config', event)">
+    <span class="nav-icon">&#9881;</span> Configuration
+  </a>
+</div>
+
 <div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE</div>
 
-<div class="page">
+<div class="page active" id="page-dashboard">
 
   <!-- =============== ENERGY FLOW DIAGRAM =============== -->
   <div class="flow-diagram" id="flow-diagram">
@@ -537,11 +675,21 @@
 
   <!-- =============== CONTROLS =============== -->
   <div class="card controls-card">
-    <div class="card-title">Manual Controls</div>
+    <div class="card-title">Controls</div>
     <div class="control-row">
       <span class="control-label">Control</span>
       <button class="btn active" id="btn-auto" onclick="setControlMode('auto')">AUTO</button>
       <button class="btn" id="btn-manual" onclick="setControlMode('manual')">MANUAL</button>
+    </div>
+    <!-- Auto profile indicator (visible in AUTO mode) -->
+    <div id="auto-modes-section" style="display:none">
+      <div class="auto-mode-row">
+        <span class="control-label">Auto Profile</span>
+        <button class="auto-mode-btn" data-mode="balanced" onclick="setAutoProfile('balanced')">Balanced</button>
+        <button class="auto-mode-btn" data-mode="max_solar" onclick="setAutoProfile('max_solar')">Max Solar</button>
+        <button class="auto-mode-btn" data-mode="pure_backup" onclick="setAutoProfile('pure_backup')">Pure Backup</button>
+        <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
+      </div>
     </div>
     <div class="control-row">
       <span class="control-label">Output</span>
@@ -596,6 +744,74 @@
   <div class="footer" id="footer">Updated: --</div>
 </div>
 
+<!-- =============== CONFIGURATION PAGE =============== -->
+<div class="page" id="page-config">
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Auto Mode Configuration</div>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px">
+      Configure how the inverter automatically manages battery charge levels.
+      Select a profile and adjust the SOC thresholds using the sliders below.
+    </p>
+
+    <div class="auto-mode-row">
+      <span class="control-label">Profile</span>
+      <button class="auto-mode-btn" data-mode="balanced" onclick="setAutoProfile('balanced')">Balanced</button>
+      <button class="auto-mode-btn" data-mode="max_solar" onclick="setAutoProfile('max_solar')">Max Solar</button>
+      <button class="auto-mode-btn" data-mode="pure_backup" onclick="setAutoProfile('pure_backup')">Pure Backup</button>
+      <button class="auto-mode-btn" data-mode="custom" onclick="setAutoProfile('custom')">Custom</button>
+    </div>
+
+    <div class="threshold-bar-wrap">
+      <div class="threshold-bar-labels"><span>0%</span><span>SOC Thresholds</span><span>100%</span></div>
+      <div class="threshold-bar" id="threshold-bar">
+        <div class="threshold-zone zone-charge" id="zone-charge"></div>
+        <div class="threshold-zone zone-hysteresis" id="zone-hysteresis"></div>
+        <div class="threshold-zone zone-normal" id="zone-normal"></div>
+        <div class="threshold-zone zone-battery" id="zone-battery"></div>
+        <div class="threshold-thumb thumb-low" id="thumb-low" data-key="low"></div>
+        <div class="threshold-thumb thumb-charge" id="thumb-charge" data-key="charge"></div>
+        <div class="threshold-thumb thumb-high" id="thumb-high" data-key="high"></div>
+      </div>
+      <div class="threshold-value-labels" id="threshold-value-labels">
+        <span class="threshold-val-label val-low" id="val-low">82%</span>
+        <span class="threshold-val-label val-charge" id="val-charge">85%</span>
+        <span class="threshold-val-label val-high" id="val-high">92%</span>
+      </div>
+    </div>
+
+    <div class="threshold-desc" id="threshold-desc">
+      <b>Grid Charge</b> below <span id="desc-low">82</span>% &rarr;
+      <b>Top off</b> to <span id="desc-charge">85</span>% &rarr;
+      <b>Use Battery</b> above <span id="desc-high">92</span>%
+    </div>
+
+    <div class="threshold-actions">
+      <button class="btn btn-reset" onclick="resetAutoProfile()">Reset to Default</button>
+      <button class="btn btn-save" onclick="saveAutoProfile()">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Profile Descriptions</div>
+    <div class="metric">
+      <span class="metric-label" style="min-width:100px"><b>Balanced</b></span>
+      <span style="font-size:12px;color:var(--text-dim)">Moderate battery use. Grid charges below 82%, battery powers loads above 92%.</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" style="min-width:100px"><b>Max Solar</b></span>
+      <span style="font-size:12px;color:var(--text-dim)">Maximizes solar self-consumption. Deep discharge to 30% allowed. Best for sunny climates.</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" style="min-width:100px"><b>Pure Backup</b></span>
+      <span style="font-size:12px;color:var(--text-dim)">Keeps battery near 100% for power outages. Grid charges below 95%. Minimal battery cycling.</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" style="min-width:100px"><b>Custom</b></span>
+      <span style="font-size:12px;color:var(--text-dim)">Your own thresholds. Adjust the sliders and save.</span>
+    </div>
+  </div>
+</div>
+
 <!-- Debug Log Panel -->
 <button class="debug-toggle" id="debug-toggle" onclick="toggleDebug()">Debug Log</button>
 <div class="debug-panel" id="debug-panel">
@@ -636,6 +852,26 @@ function connectWS() {
 }
 
 // ============================================================
+// Navigation
+// ============================================================
+function toggleNav() {
+  document.getElementById('nav-overlay').classList.toggle('open');
+  document.getElementById('nav-drawer').classList.toggle('open');
+}
+
+function navigateTo(page, e) {
+  if (e) e.preventDefault();
+  toggleNav();
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-drawer a').forEach(a => {
+    a.classList.toggle('active', a.dataset.page === page);
+  });
+  // Re-init slider drag when config page shown (elements now visible)
+  if (page === 'config') initSliderDrag();
+}
+
+// ============================================================
 // Update all dashboard elements
 // ============================================================
 function updateDashboard(d) {
@@ -666,7 +902,8 @@ function updateDashboard(d) {
     : `${battKw} <span class="node-sub">kW</span>`;
   const socEl = document.getElementById('flow-soc');
   socEl.textContent = `${soc} %`;
-  socEl.style.color = soc <= 82 ? 'var(--red)' : soc <= 92 ? 'var(--yellow)' : 'var(--green)';
+  const lowT = sliderValues.low, hiT = sliderValues.high;
+  socEl.style.color = soc <= lowT ? 'var(--red)' : soc <= hiT ? 'var(--yellow)' : 'var(--green)';
 
   // Grid node — estimate current grid power from load + charging - solar
   const gridPowerW = gridPresent ? Math.max(0, loadPower + (d.total_charge_power ?? 0) - pvTotal) : 0;
@@ -801,6 +1038,11 @@ function updateControlButtons(d) {
     btn.classList.toggle('active', cm === m && isManual);
     btn.classList.toggle('current-mode', cm === m && !isManual);
   });
+
+  // Auto mode profiles
+  if (d?.active_auto_mode) currentAutoMode = d.active_auto_mode;
+  if (d?.auto_modes) autoModesData = d.auto_modes;
+  updateAutoModesUI();
 }
 
 async function setControlMode(mode) { await fetch(`/api/mode/${mode}`, { method: 'POST' }); }
@@ -844,6 +1086,175 @@ document.addEventListener('click', function(e) {
     hintEl.classList.toggle('hint-visible');
   }
 });
+
+// ============================================================
+// Auto Mode Profiles + Threshold Slider
+// ============================================================
+let currentAutoMode = 'balanced';
+let autoModesData = null;   // cached from server
+let sliderValues = { low: 82, charge: 85, high: 92 };
+let sliderDirty = false;    // true if user dragged but hasn't saved
+
+function updateAutoModesUI() {
+  // Highlight active profile button (both on dashboard and config page)
+  document.querySelectorAll('.auto-mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === currentAutoMode);
+  });
+
+  // Show/hide profile selector on dashboard based on manual mode
+  const section = document.getElementById('auto-modes-section');
+  if (section) section.style.display = isManual ? 'none' : 'block';
+
+  if (autoModesData && autoModesData[currentAutoMode]) {
+    if (!sliderDirty) {
+      sliderValues = { ...autoModesData[currentAutoMode] };
+    }
+  }
+  renderSlider();
+}
+
+function renderSlider() {
+  const { low, charge, high } = sliderValues;
+  const bar = document.getElementById('threshold-bar');
+  if (!bar) return;
+
+  // Zone widths (percentage)
+  document.getElementById('zone-charge').style.cssText = `left:0;width:${low}%`;
+  document.getElementById('zone-hysteresis').style.cssText = `left:${low}%;width:${charge - low}%`;
+  document.getElementById('zone-normal').style.cssText = `left:${charge}%;width:${high - charge}%`;
+  document.getElementById('zone-battery').style.cssText = `left:${high}%;width:${100 - high}%`;
+
+  // Thumb positions
+  document.getElementById('thumb-low').style.left = low + '%';
+  document.getElementById('thumb-charge').style.left = charge + '%';
+  document.getElementById('thumb-high').style.left = high + '%';
+
+  // Value labels
+  document.getElementById('val-low').style.left = low + '%';
+  document.getElementById('val-low').textContent = low + '%';
+  document.getElementById('val-charge').style.left = charge + '%';
+  document.getElementById('val-charge').textContent = charge + '%';
+  document.getElementById('val-high').style.left = high + '%';
+  document.getElementById('val-high').textContent = high + '%';
+
+  // Description
+  document.getElementById('desc-low').textContent = low;
+  document.getElementById('desc-charge').textContent = charge;
+  document.getElementById('desc-high').textContent = high;
+}
+
+// Dragging logic for threshold slider
+let sliderDragInited = false;
+function initSliderDrag() {
+  if (sliderDragInited) return;
+  const bar = document.getElementById('threshold-bar');
+  if (!bar) return;
+  sliderDragInited = true;
+  let activeThumb = null, activeKey = null;
+
+  function startDrag(e) {
+    const thumb = e.target.closest('.threshold-thumb');
+    if (!thumb) return;
+    e.preventDefault();
+    activeThumb = thumb;
+    activeKey = thumb.dataset.key;
+    thumb.classList.add('dragging');
+    document.getElementById('val-' + activeKey).classList.add('dragging');
+  }
+
+  function moveDrag(e) {
+    if (!activeThumb) return;
+    e.preventDefault();
+    const rect = bar.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let pct = Math.round(((clientX - rect.left) / rect.width) * 100);
+    pct = Math.max(10, Math.min(100, pct));
+
+    if (activeKey === 'low') {
+      pct = Math.min(pct, sliderValues.charge - 1);
+    } else if (activeKey === 'charge') {
+      pct = Math.max(pct, sliderValues.low + 1);
+      pct = Math.min(pct, sliderValues.high - 1);
+    } else if (activeKey === 'high') {
+      pct = Math.max(pct, sliderValues.charge + 1);
+    }
+
+    sliderValues[activeKey] = pct;
+    sliderDirty = true;
+    renderSlider();
+  }
+
+  function endDrag() {
+    if (activeThumb) {
+      activeThumb.classList.remove('dragging');
+      document.getElementById('val-' + activeKey).classList.remove('dragging');
+      activeThumb = null;
+      activeKey = null;
+    }
+  }
+
+  bar.addEventListener('mousedown', startDrag);
+  bar.addEventListener('touchstart', startDrag, { passive: false });
+  document.addEventListener('mousemove', moveDrag);
+  document.addEventListener('touchmove', moveDrag, { passive: false });
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchend', endDrag);
+}
+
+async function setAutoProfile(mode) {
+  sliderDirty = false;
+  try {
+    const resp = await fetch('/api/auto-modes/active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    const data = await resp.json();
+    if (data.active_mode) {
+      currentAutoMode = data.active_mode;
+      if (data.thresholds) {
+        if (!autoModesData) autoModesData = {};
+        autoModesData[mode] = data.thresholds;
+        sliderValues = { ...data.thresholds };
+      }
+      updateAutoModesUI();
+    }
+  } catch (e) { console.error('Failed to set auto profile:', e); }
+}
+
+async function saveAutoProfile() {
+  try {
+    const resp = await fetch('/api/auto-modes/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: currentAutoMode, ...sliderValues })
+    });
+    const data = await resp.json();
+    if (data.thresholds) {
+      if (!autoModesData) autoModesData = {};
+      autoModesData[currentAutoMode] = data.thresholds;
+      sliderDirty = false;
+    }
+  } catch (e) { console.error('Failed to save profile:', e); }
+}
+
+async function resetAutoProfile() {
+  try {
+    const resp = await fetch('/api/auto-modes/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: currentAutoMode })
+    });
+    const data = await resp.json();
+    if (data.thresholds) {
+      if (!autoModesData) autoModesData = {};
+      autoModesData[currentAutoMode] = data.thresholds;
+      sliderValues = { ...data.thresholds };
+      sliderDirty = false;
+      renderSlider();
+    }
+  } catch (e) { console.error('Failed to reset profile:', e); }
+}
 
 // ============================================================
 // Charts
