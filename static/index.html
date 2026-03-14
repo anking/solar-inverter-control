@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Solar Inverter Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 <style>
   :root {
     --bg: #1a1a2e;
@@ -849,10 +850,10 @@ document.addEventListener('click', function(e) {
 // ============================================================
 const cc = { soc: '#38bdf8', pv: '#eab308', load: '#f97316', grid: '#3b82f6' };
 
+let historyHours = 6; // track current selection for axis range
 const historyChart = new Chart(document.getElementById('historyChart').getContext('2d'), {
   type: 'line',
   data: {
-    labels: [],
     datasets: [
       { label: 'SOC %', data: [], borderColor: cc.soc, backgroundColor: cc.soc + '20', fill: true, yAxisID: 'soc', tension: 0.3, pointRadius: 0, borderWidth: 2 },
       { label: 'PV (W)', data: [], borderColor: cc.pv, yAxisID: 'power', tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
@@ -864,7 +865,12 @@ const historyChart = new Chart(document.getElementById('historyChart').getContex
     interaction: { intersect: false, mode: 'index' },
     plugins: { legend: { labels: { color: '#8888a8', usePointStyle: true, pointStyleWidth: 14, font: { size: 10 } } } },
     scales: {
-      x: { ticks: { color: '#555578', maxTicksLimit: 10, font: { size: 9 } }, grid: { color: '#2a2a45' } },
+      x: {
+        type: 'time',
+        time: { tooltipFormat: 'MMM d, HH:mm', displayFormats: { minute: 'HH:mm', hour: 'MMM d HH:mm', day: 'MMM d' } },
+        ticks: { color: '#555578', maxTicksLimit: 10, font: { size: 9 } },
+        grid: { color: '#2a2a45' },
+      },
       soc: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { color: cc.soc, callback: v => v + '%', font: { size: 9 } }, grid: { color: '#2a2a45' } },
       power: { type: 'linear', position: 'right', min: 0, ticks: { color: '#8888a8', callback: v => v + 'W', font: { size: 9 } }, grid: { display: false } },
     }
@@ -876,16 +882,24 @@ async function loadHistory(hours, btn) {
     document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
   }
+  historyHours = hours;
   try {
     const resp = await fetch(`/api/history?hours=${hours}`);
     const data = await resp.json();
     const max = 500;
     let s = data;
     if (data.length > max) { const step = Math.ceil(data.length / max); s = data.filter((_, i) => i % step === 0); }
-    historyChart.data.labels = s.map(r => new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    historyChart.data.datasets[0].data = s.map(r => r.soc);
-    historyChart.data.datasets[1].data = s.map(r => r.pv_total_power || 0);
-    historyChart.data.datasets[2].data = s.map(r => r.load_power || 0);
+
+    // Convert to {x: Date, y: value} for time scale
+    historyChart.data.datasets[0].data = s.map(r => ({ x: new Date(r.timestamp), y: r.soc }));
+    historyChart.data.datasets[1].data = s.map(r => ({ x: new Date(r.timestamp), y: r.pv_total_power || 0 }));
+    historyChart.data.datasets[2].data = s.map(r => ({ x: new Date(r.timestamp), y: r.load_power || 0 }));
+
+    // Fix X axis to the full requested time window
+    const now = new Date();
+    historyChart.options.scales.x.min = new Date(now.getTime() - hours * 3600000);
+    historyChart.options.scales.x.max = now;
+
     historyChart.update('none');
   } catch (e) { console.error('History load failed:', e); }
 }
