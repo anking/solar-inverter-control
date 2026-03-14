@@ -1189,10 +1189,11 @@ function updateFlowAnimations(d) {
   setDots('dot-inv-batt', 3, charging);     // Inverter → Battery
   setDots('dot-batt-inv', 3, discharging);   // Battery → Inverter
 
-  // Grid flow: if UTI mode, grid → inverter; if SBU and grid present, might export
-  const gridImporting = gridPresent && (outMode === 'UTI' || outMode === 'SUB');
-  const gridIdle = gridPresent && !gridImporting;
-  document.getElementById('path-inv-grid').classList.toggle('active', gridPresent);
+  // Grid flow: only animate when grid is actually supplying power
+  const chargePower = d.total_charge_power ?? 0;
+  const gridPowerEst = gridPresent ? Math.max(0, loadPower + chargePower - pvTotal) : 0;
+  const gridImporting = gridPresent && gridPowerEst > 50;  // >50W threshold to avoid flicker
+  document.getElementById('path-inv-grid').classList.toggle('active', gridImporting);
   setDots('dot-grid-inv', 3, gridImporting);  // Grid → Inverter
   setDots('dot-inv-grid', 3, false);          // No export on these inverters
 
@@ -1841,24 +1842,47 @@ function renderWeather(data) {
   }
   const hourlyEl = document.getElementById('weather-hourly');
   hourlyEl.innerHTML = html;
-  // Attach tooltip hover handlers
-  const tooltip = document.getElementById('weather-tooltip');
-  hourlyEl.querySelectorAll('.weather-hour').forEach(el => {
-    el.addEventListener('mouseenter', (e) => {
-      tooltip.innerHTML = el.dataset.tip;
-      tooltip.style.display = 'block';
-      const rect = el.getBoundingClientRect();
-      tooltip.style.left = rect.left + 'px';
-      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
-      // Keep within viewport
-      const tr = tooltip.getBoundingClientRect();
-      if (tr.right > window.innerWidth) tooltip.style.left = (window.innerWidth - tr.width - 8) + 'px';
-      if (tr.left < 0) tooltip.style.left = '8px';
-      if (tr.top < 0) tooltip.style.top = (rect.bottom + 8) + 'px';
-    });
-    el.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-  });
 }
+
+// Weather tooltip — event delegation on document for robustness
+(function() {
+  const tooltip = document.getElementById('weather-tooltip');
+  if (!tooltip) return;
+  let activeHour = null;
+  document.addEventListener('mouseover', function(e) {
+    const hour = e.target.closest('.weather-hour');
+    if (!hour || !hour.dataset.tip) {
+      if (activeHour && !activeHour.contains(e.target)) {
+        tooltip.style.display = 'none';
+        activeHour = null;
+      }
+      return;
+    }
+    if (hour === activeHour) return;  // already showing for this element
+    activeHour = hour;
+    tooltip.innerHTML = hour.dataset.tip;
+    // Position off-screen first to measure, then move into place
+    tooltip.style.left = '-9999px';
+    tooltip.style.top = '-9999px';
+    tooltip.style.display = 'block';
+    const tipH = tooltip.offsetHeight;
+    const tipW = tooltip.offsetWidth;
+    const rect = hour.getBoundingClientRect();
+    let left = rect.left + (rect.width / 2) - (tipW / 2);
+    let top = rect.top - tipH - 8;
+    if (top < 0) top = rect.bottom + 8;
+    if (left + tipW > window.innerWidth) left = window.innerWidth - tipW - 8;
+    if (left < 0) left = 8;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  });
+  document.addEventListener('mouseout', function(e) {
+    if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('.weather-hour')) {
+      tooltip.style.display = 'none';
+      activeHour = null;
+    }
+  });
+})();
 
 async function setWeatherZip() {
   const input = document.getElementById('weather-zip');
