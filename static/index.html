@@ -1104,8 +1104,6 @@ function updateDashboard(d) {
     : `${battKw} <span class="node-sub">kW</span>`;
   const socEl = document.getElementById('flow-soc');
   socEl.textContent = `${soc} %`;
-  const lowT = sliderValues.low, hiT = sliderValues.high;
-  socEl.style.color = soc <= lowT ? 'var(--red)' : soc <= hiT ? 'var(--yellow)' : 'var(--green)';
 
   // Grid node — estimate current grid power from load + charging - solar
   const gridPowerW = gridPresent ? Math.max(0, loadPower + (d.total_charge_power ?? 0) - pvTotal) : 0;
