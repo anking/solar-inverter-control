@@ -1055,9 +1055,23 @@ function navigateTo(page, e) {
   document.querySelectorAll('.nav-drawer a').forEach(a => {
     a.classList.toggle('active', a.dataset.page === page);
   });
+  location.hash = page;
   // Re-init slider drag when config page shown (elements now visible)
   if (page === 'config') initSliderDrag();
 }
+
+// Restore page from URL hash on load
+(function() {
+  const hash = location.hash.replace('#', '');
+  if (hash && document.getElementById('page-' + hash)) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + hash).classList.add('active');
+    document.querySelectorAll('.nav-drawer a').forEach(a => {
+      a.classList.toggle('active', a.dataset.page === hash);
+    });
+    if (hash === 'config') setTimeout(initSliderDrag, 0);
+  }
+})();
 
 // ============================================================
 // Update all dashboard elements
