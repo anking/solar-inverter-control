@@ -152,7 +152,7 @@
   }
   .inverter-box .inv-mode {
     font-size: 13px; font-weight: 700; color: var(--accent);
-    white-space: nowrap;
+    text-align: center; word-break: break-word;
   }
 
   /* =========== SVG FLOW LINES =========== */
@@ -546,8 +546,8 @@
     .flow-diagram { aspect-ratio: 4 / 4; }
     .flow-node .icon { width: 48px; height: 48px; font-size: 28px; }
     .flow-node .node-value { font-size: 16px; }
-    .inverter-box { width: 56px; height: 56px; font-size: 10px; }
-    .inverter-box .inv-mode { font-size: 12px; }
+    .inverter-box { min-width: 56px; width: auto; height: auto; min-height: 56px; padding: 4px 6px; font-size: 10px; }
+    .inverter-box .inv-mode { font-size: 11px; }
     .node-battery { left: 4%; }
     .node-load { right: 4%; }
     .stat-value { font-size: 20px; }
