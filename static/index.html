@@ -722,7 +722,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Current</span>
-        <span><span class="metric-value" id="det-batt-i">--</span><span class="metric-unit">A</span></span>
+        <span><span class="metric-value" id="det-batt-i">--</span><span class="metric-unit">A</span><span id="det-batt-i-dir" style="font-size:11px"></span></span>
       </div>
     </div>
     <div class="card">
@@ -1155,7 +1155,10 @@ function updateDashboard(d) {
   // -- Detail cards --
   document.getElementById('det-soc').textContent = soc;
   document.getElementById('det-batt-v').textContent = battV?.toFixed(1) ?? '--';
-  document.getElementById('det-batt-i').textContent = battI.toFixed(1);
+  const battIEl = document.getElementById('det-batt-i');
+  battIEl.textContent = Math.abs(battI).toFixed(1);
+  battIEl.style.color = battCharging ? 'var(--green)' : battDischarging ? 'var(--red)' : '';
+  document.getElementById('det-batt-i-dir').textContent = battCharging ? ' ▲' : battDischarging ? ' ▼' : '';
   document.getElementById('det-pv1').textContent = d.pv1_power ?? '--';
   document.getElementById('det-pv2').textContent = d.pv2_power ?? '--';
   document.getElementById('det-pv-total').textContent = pvTotal;
