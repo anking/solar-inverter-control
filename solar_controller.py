@@ -152,7 +152,8 @@ def setup_logging():
     logger.addHandler(console)
 
     try:
-        file_handler = logging.FileHandler(LOG_FILE)
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3)
         file_handler.setLevel(LOG_LEVEL)
         file_handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")

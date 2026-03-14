@@ -111,7 +111,8 @@ def setup_logging():
     logger.addHandler(ws_log_handler)
 
     try:
-        file_handler = logging.FileHandler(LOG_FILE)
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3)
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(fmt)
         logger.addHandler(file_handler)
