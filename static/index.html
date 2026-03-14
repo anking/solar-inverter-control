@@ -104,6 +104,7 @@
     position: relative;
     width: 100%;
     aspect-ratio: 5 / 4;
+    min-height: 320px;
     max-height: 420px;
     margin: 0 auto 16px;
   }
@@ -135,7 +136,7 @@
 
   /* Node positions */
   .node-solar   { top: 0; left: 50%; transform: translateX(-50%); }
-  .node-inverter{ top: 38%; left: 50%; transform: translate(-50%, -50%); }
+  .node-inverter{ position: absolute !important; top: 38%; left: 50%; transform: translate(-50%, -50%); }
   .node-battery { bottom: 0; left: 8%; }
   .node-grid    { bottom: 0; left: 50%; transform: translateX(-50%); }
   .node-load    { bottom: 0; right: 8%; text-align: center; }
@@ -543,7 +544,7 @@
   /* =========== RESPONSIVE =========== */
   @media (max-width: 600px) {
     .page { padding: 8px; }
-    .flow-diagram { aspect-ratio: 4 / 4; }
+    .flow-diagram { aspect-ratio: 4 / 4; min-height: 300px; }
     .flow-node .icon { width: 48px; height: 48px; font-size: 28px; }
     .flow-node .node-value { font-size: 16px; }
     .inverter-box { min-width: 56px; width: auto; height: auto; min-height: 56px; padding: 4px 6px; font-size: 10px; }
