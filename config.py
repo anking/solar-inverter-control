@@ -194,3 +194,37 @@ def save_weather_location(data):
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, WEATHER_FILE)
+
+
+# =============================================================================
+# MQTT / CLOUD CONNECTION
+# =============================================================================
+
+MQTT_CONFIG_FILE = os.environ.get(
+    "SOLAR_MQTT_CONFIG",
+    os.path.join(os.path.dirname(DB_PATH), "mqtt_config.json"),
+)
+
+MQTT_DEFAULTS = {
+    "host": "",
+    "port": 1883,
+    "username": "",
+    "password": "",
+}
+
+
+def load_mqtt_config():
+    """Load MQTT configuration from JSON file, falling back to defaults."""
+    try:
+        with open(MQTT_CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(MQTT_DEFAULTS)
+
+
+def save_mqtt_config(data):
+    """Save MQTT configuration to JSON file atomically."""
+    tmp = MQTT_CONFIG_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, MQTT_CONFIG_FILE)

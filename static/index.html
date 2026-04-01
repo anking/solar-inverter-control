@@ -629,6 +629,9 @@
   <a href="#" data-page="debug" onclick="navigateTo('debug', event)">
     <span class="nav-icon">&#128269;</span> Debug
   </a>
+  <a href="#" data-page="cloud" onclick="navigateTo('cloud', event)">
+    <span class="nav-icon">&#9729;</span> Cloud
+  </a>
 </div>
 
 <div class="manual-banner" id="manual-banner">MANUAL OVERRIDE ACTIVE</div>
@@ -1025,6 +1028,51 @@
 </div>
 
 <!-- =============== DEBUG PAGE =============== -->
+<div class="page" id="page-cloud">
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Cloud Connection</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
+      Connect this device to a remote backend via MQTT to enable remote monitoring and control.
+    </div>
+
+    <div id="cloud-status" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px;background:var(--surface2);border-radius:8px">
+      <div id="cloud-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text-dim)"></div>
+      <span id="cloud-label" style="font-size:13px">Not configured</span>
+    </div>
+
+    <div id="cloud-mac" style="font-size:12px;color:var(--text-dim);margin-bottom:16px">
+      Device ID: <span id="cloud-mac-value">--</span>
+    </div>
+
+    <div id="cloud-form">
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Backend Host</label>
+        <input type="text" id="mqtt-host" placeholder="e.g. myserver.com or 192.168.1.100"
+          style="width:100%;padding:8px 12px;background:var(--surface2);border:1px solid var(--text-dim);border-radius:6px;color:var(--text);font-size:14px">
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Port</label>
+        <input type="number" id="mqtt-port" value="1883" placeholder="1883"
+          style="width:120px;padding:8px 12px;background:var(--surface2);border:1px solid var(--text-dim);border-radius:6px;color:var(--text);font-size:14px">
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Username (optional)</label>
+        <input type="text" id="mqtt-username" placeholder="Leave empty for anonymous"
+          style="width:100%;padding:8px 12px;background:var(--surface2);border:1px solid var(--text-dim);border-radius:6px;color:var(--text);font-size:14px">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Password (optional)</label>
+        <input type="password" id="mqtt-password" placeholder="Leave empty for anonymous"
+          style="width:100%;padding:8px 12px;background:var(--surface2);border:1px solid var(--text-dim);border-radius:6px;color:var(--text);font-size:14px">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="cloud-connect-btn" onclick="connectCloud()">Connect</button>
+        <button class="btn" id="cloud-disconnect-btn" onclick="disconnectCloud()" style="display:none;background:var(--red)">Disconnect</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-debug">
 
   <!-- Test Alert Banner -->
@@ -1169,6 +1217,7 @@ function navigateTo(page, e) {
   // Re-init slider drag when config page shown (elements now visible)
   if (page === 'config') initSliderDrag();
   if (page === 'debug') { loadSmartDebug(); loadRawWeather(); }
+  if (page === 'cloud') loadCloudStatus();
 }
 
 // Restore page from URL hash on load
@@ -2280,6 +2329,95 @@ setInterval(() => {
 setInterval(loadDaily, 300000);
 loadWeather();
 setInterval(loadWeather, 300000);
+
+// =============================================================================
+// CLOUD CONNECTION
+// =============================================================================
+
+async function loadCloudStatus() {
+  try {
+    const r = await fetch('/api/mqtt');
+    const data = await r.json();
+    const dot = document.getElementById('cloud-dot');
+    const label = document.getElementById('cloud-label');
+    const macVal = document.getElementById('cloud-mac-value');
+    const connectBtn = document.getElementById('cloud-connect-btn');
+    const disconnectBtn = document.getElementById('cloud-disconnect-btn');
+    const hostInput = document.getElementById('mqtt-host');
+    const portInput = document.getElementById('mqtt-port');
+    const userInput = document.getElementById('mqtt-username');
+    const passInput = document.getElementById('mqtt-password');
+
+    macVal.textContent = data.mac_address || '--';
+
+    if (data.connected) {
+      dot.style.background = 'var(--green)';
+      label.textContent = 'Connected to ' + data.host;
+      connectBtn.style.display = 'none';
+      disconnectBtn.style.display = '';
+    } else if (data.configured) {
+      dot.style.background = 'var(--orange)';
+      label.textContent = 'Configured but disconnected (' + data.host + ')';
+      connectBtn.textContent = 'Reconnect';
+      connectBtn.style.display = '';
+      disconnectBtn.style.display = '';
+    } else {
+      dot.style.background = 'var(--text-dim)';
+      label.textContent = 'Not configured';
+      connectBtn.textContent = 'Connect';
+      connectBtn.style.display = '';
+      disconnectBtn.style.display = 'none';
+    }
+
+    if (data.host) hostInput.value = data.host;
+    if (data.port) portInput.value = data.port;
+  } catch (e) {
+    console.error('Cloud status error:', e);
+  }
+}
+
+async function connectCloud() {
+  const host = document.getElementById('mqtt-host').value.trim();
+  const port = parseInt(document.getElementById('mqtt-port').value) || 1883;
+  const username = document.getElementById('mqtt-username').value.trim();
+  const password = document.getElementById('mqtt-password').value.trim();
+  if (!host) { alert('Please enter a host address'); return; }
+
+  const btn = document.getElementById('cloud-connect-btn');
+  btn.textContent = 'Connecting...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/mqtt', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ host, port, username, password })
+    });
+    if (!r.ok) { const d = await r.json(); alert(d.error || 'Failed'); return; }
+    // Wait a moment for connection to establish
+    await new Promise(ok => setTimeout(ok, 2000));
+    loadCloudStatus();
+  } catch (e) {
+    alert('Connection error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+  }
+}
+
+async function disconnectCloud() {
+  if (!confirm('Disconnect from cloud backend?')) return;
+  try {
+    await fetch('/api/mqtt', { method: 'DELETE' });
+    loadCloudStatus();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// Load cloud status on page load and refresh periodically
+loadCloudStatus();
+setInterval(loadCloudStatus, 15000);
 </script>
 </body>
 </html>

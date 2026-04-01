@@ -45,6 +45,7 @@ from config import (
     NWS_ALERTS_REFRESH,
 )
 from inverter import InverterController
+from mqtt_client import MqttBridge
 from database import (
     init_db, log_reading, update_daily_stats,
     get_history, get_daily_stats, cleanup_old_readings,
@@ -77,6 +78,9 @@ smart_enabled: bool = False
 smart_effective_profile: str = "balanced"
 smart_reason: str = ""
 smart_last_switch: float = 0
+
+# MQTT bridge for cloud connectivity
+mqtt_bridge: MqttBridge = MqttBridge()
 smart_task: asyncio.Task = None
 
 
@@ -309,6 +313,10 @@ async def control_loop():
 
             # Broadcast to WebSocket clients
             await broadcast_status(status)
+
+            # Publish to MQTT cloud if connected
+            if mqtt_bridge.connected:
+                await asyncio.to_thread(mqtt_bridge.publish_telemetry, status)
 
         except asyncio.CancelledError:
             raise
@@ -632,13 +640,133 @@ async def smart_mode_loop():
 
 
 # =============================================================================
+# MQTT COMMAND HANDLER
+# =============================================================================
+
+async def handle_mqtt_command(action: str, params: dict) -> dict:
+    """Dispatch a remote command received via MQTT. Returns result dict."""
+    global manual_mode, active_auto_mode, smart_enabled, smart_effective_profile, smart_reason
+
+    if action == "set_manual_mode":
+        manual_mode = True
+        logging.info("MQTT: switched to MANUAL mode")
+        await _broadcast_manual_update()
+        return {"manual_mode": True}
+
+    elif action == "set_auto_mode":
+        manual_mode = False
+        logging.info("MQTT: switched to AUTO mode")
+        await _broadcast_manual_update()
+        return {"manual_mode": False}
+
+    elif action == "set_output_mode":
+        mode_map = {"sol": MODE_SOL, "uti": MODE_UTI, "sbu": MODE_SBU, "sub": MODE_SUB}
+        mode = params.get("mode", "").lower()
+        mode_val = mode_map.get(mode)
+        if mode_val is None:
+            raise ValueError(f"Invalid mode: {mode}")
+        if not manual_mode:
+            raise ValueError("Switch to manual mode first")
+        success = await asyncio.to_thread(controller.set_output_mode, mode_val)
+        if success and latest_status:
+            latest_status["output_mode"] = mode_val
+            latest_status["output_mode_name"] = MODE_NAMES.get(mode_val, str(mode_val))
+            await broadcast_status(latest_status)
+        return {"success": success, "mode": mode.upper()}
+
+    elif action == "set_charge_mode":
+        mode_map = {"snu": CHARGE_SNU, "oso": CHARGE_OSO}
+        mode = params.get("mode", "").lower()
+        mode_val = mode_map.get(mode)
+        if mode_val is None:
+            raise ValueError(f"Invalid charge mode: {mode}")
+        if not manual_mode:
+            raise ValueError("Switch to manual mode first")
+        success = await asyncio.to_thread(controller.set_charge_mode, mode_val)
+        if success and latest_status:
+            latest_status["charge_mode"] = mode_val
+            latest_status["charge_mode_name"] = CHARGE_NAMES.get(mode_val, str(mode_val))
+            await broadcast_status(latest_status)
+        return {"success": success, "mode": mode.upper()}
+
+    elif action == "set_active_profile":
+        mode = params.get("mode", "")
+        if mode == "smart":
+            smart_enabled = True
+            current_soc = latest_status.get("soc", 50) if latest_status else 50
+            profile, reason = evaluate_smart_mode(current_soc)
+            smart_effective_profile = profile
+            smart_reason = reason
+            active_auto_mode = profile
+            auto_modes["active_mode"] = "smart"
+            await asyncio.to_thread(save_auto_modes, auto_modes)
+            await _broadcast_manual_update()
+            return {"active_mode": "smart", "smart_effective": profile}
+        else:
+            if mode not in auto_modes.get("modes", {}):
+                raise ValueError(f"Invalid profile: {mode}")
+            smart_enabled = False
+            active_auto_mode = mode
+            auto_modes["active_mode"] = mode
+            await asyncio.to_thread(save_auto_modes, auto_modes)
+            await _broadcast_manual_update()
+            return {"active_mode": mode}
+
+    elif action == "update_profile":
+        mode = params.get("mode", "")
+        low = int(params.get("low", 0))
+        charge = int(params.get("charge", 0))
+        high = int(params.get("high", 0))
+        if not (10 <= low < charge < high <= 100):
+            raise ValueError("Must satisfy: 10 <= low < charge < high <= 100")
+        auto_modes["modes"][mode] = {"low": low, "charge": charge, "high": high}
+        await asyncio.to_thread(save_auto_modes, auto_modes)
+        await _broadcast_manual_update()
+        return {"mode": mode, "thresholds": auto_modes["modes"][mode]}
+
+    elif action == "reset_profile":
+        mode = params.get("mode", "")
+        if mode not in MODES_DEFAULTS["modes"]:
+            raise ValueError(f"Invalid profile: {mode}")
+        auto_modes["modes"][mode] = dict(MODES_DEFAULTS["modes"][mode])
+        await asyncio.to_thread(save_auto_modes, auto_modes)
+        await _broadcast_manual_update()
+        return {"mode": mode, "thresholds": auto_modes["modes"][mode]}
+
+    elif action == "set_weather_location":
+        zip_code = str(params.get("zip_code", ""))
+        if not zip_code:
+            raise ValueError("zip_code required")
+        # Geocode
+        geo_url = f"https://api.zippopotam.us/us/{zip_code}"
+        req = urllib.request.Request(geo_url)
+        resp = urllib.request.urlopen(req, timeout=10)
+        geo_data = json.loads(resp.read())
+        place = geo_data["places"][0]
+        loc = {
+            "zip_code": zip_code,
+            "lat": float(place["latitude"]),
+            "lon": float(place["longitude"]),
+            "city": place["place name"],
+            "state": place["state abbreviation"],
+        }
+        save_weather_location(loc)
+        global weather_location
+        weather_location = loc
+        return loc
+
+    else:
+        raise ValueError(f"Unknown action: {action}")
+
+
+# =============================================================================
 # FASTAPI APP
 # =============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global controller, control_task, log_event_loop, auto_modes, active_auto_mode
-    global weather_location, weather_task, smart_task, smart_enabled
+    global weather_location, weather_task, smart_task, smart_enabled, mqtt_bridge
 
     setup_logging()
     log_event_loop = asyncio.get_running_loop()
@@ -664,6 +792,10 @@ async def lifespan(app: FastAPI):
     else:
         logging.error("Could not connect to inverter — dashboard will run without live data")
 
+    # Initialize MQTT cloud bridge
+    mqtt_bridge.register_command_handler(handle_mqtt_command)
+    mqtt_bridge.connect()
+
     yield
 
     # Shutdown
@@ -674,6 +806,7 @@ async def lifespan(app: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
+    mqtt_bridge.disconnect()
     if controller:
         controller.disconnect()
 
@@ -1010,6 +1143,32 @@ async def set_weather_location_endpoint(request: Request):
     await _fetch_weather()
     logging.info(f"Weather location set: {weather_location['city']}, {weather_location['state']} ({zip_code})")
     return JSONResponse(weather_location)
+
+
+# --- MQTT / Cloud Connection ---
+
+@app.get("/api/mqtt")
+async def get_mqtt_status():
+    return JSONResponse(mqtt_bridge.get_status())
+
+
+@app.post("/api/mqtt")
+async def configure_mqtt(request: Request):
+    body = await request.json()
+    host = body.get("host", "").strip()
+    port = int(body.get("port", 1883))
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    if not host:
+        return JSONResponse({"error": "host is required"}, status_code=400)
+    mqtt_bridge.configure(host, port, username, password)
+    return JSONResponse(mqtt_bridge.get_status())
+
+
+@app.delete("/api/mqtt")
+async def disconnect_mqtt():
+    mqtt_bridge.clear_config()
+    return JSONResponse(mqtt_bridge.get_status())
 
 
 # --- WebSocket ---

@@ -1,3 +1,4 @@
 pyserial>=3.5
 fastapi>=0.104
 uvicorn[standard]>=0.24
+paho-mqtt>=2.0
