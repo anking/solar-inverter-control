@@ -201,6 +201,8 @@ async def control_loop():
             status["smart_effective"] = smart_effective_profile
             status["smart_reason"] = smart_reason
             status["nws_alerts"] = nws_alerts
+            status["weather"] = weather_cache if weather_cache else None
+            status["weather_location"] = weather_location if weather_location.get("zip_code") else None
             latest_status = status
 
             # Log to database
@@ -877,6 +879,8 @@ async def _broadcast_manual_update():
         latest_status["smart_effective"] = smart_effective_profile
         latest_status["smart_reason"] = smart_reason
         latest_status["nws_alerts"] = nws_alerts
+        latest_status["weather"] = weather_cache if weather_cache else None
+        latest_status["weather_location"] = weather_location if weather_location.get("zip_code") else None
         await broadcast_status(latest_status)
 
 
